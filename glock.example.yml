@@ -1,0 +1,17 @@
+open_command: open
+root_path: /some/path/ 
+root_main_stream: master
+
+credentials:
+  github_token: SECRET
+  shortcut_token: SECRET
+
+repos:
+  api-router:
+    remote: git@github.com:AzraelSec/glock.git
+  backpack:
+    remote: git@github.com:AzraelSec/glock.git
+    rel_path: something_different
+    start_cmd: "echo this repo is starting..."
+    stop_cmd: "echo this repo is stopping..."
+    exclude: true
