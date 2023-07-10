@@ -1,33 +1,29 @@
 package runner
 
 import (
-	"context"
-	"io"
-
-	"github.com/AzraelSec/glock/internal/config"
-	"github.com/AzraelSec/glock/pkg/git"
+	"sync"
 )
 
-type RunnerResult[T any] struct {
-	Error  error
-	Result T
+type Result[T any] struct {
+	Res   T
+	Error error
 }
 
-func NewRunnerResult[T any](err error, result T) RunnerResult[T] {
-	return RunnerResult[T]{
-		Error:  err,
-		Result: result,
+// Run executes f for each element in args, returning the results in the same order as args.
+func Run[ArgsT any, ResT any](f func(ArgsT) (ResT, error), args []ArgsT) []Result[ResT] {
+	var wg sync.WaitGroup
+	largs := len(args)
+	wg.Add(largs)
+
+	results := make([]Result[ResT], largs)
+	for i, arg := range args {
+		go func(i int, arg ArgsT) {
+			res, err := f(arg)
+			results[i] = Result[ResT]{Res: res, Error: err}
+			wg.Done()
+		}(i, arg)
 	}
-}
 
-type RunnerInfo[ResultT any, ArgsT any] struct {
-	Context  context.Context
-	Output   io.Writer
-	Git      git.Git
-	RepoData config.LiveRepo
-	// TODO: remove this field that is not useful at all!
-	Result   chan<- RunnerResult[ResultT]
-	Args     ArgsT
+	wg.Wait()
+	return results
 }
-
-type RunnerFunc[T any, O any] func(RunnerInfo[T, O])
