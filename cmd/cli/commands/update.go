@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"io"
 	"os"
 	"os/signal"
 
@@ -16,82 +17,84 @@ import (
 
 type updateInputPayload struct {
 	UpdaterTag string
+	RepoPath   string
 }
 type updateOutputPayload struct {
-	RepoName   string
 	UpdaterTag string
 	Inferred   bool
+	Skipped    bool
 }
 
-func updateStart(info runner.RunnerInfo[updateOutputPayload, updateInputPayload]) {
-	var err error
-	resultPayload := updateOutputPayload{
-		RepoName: info.RepoData.Name,
-	}
-	defer func() {
-		info.Result <- runner.NewRunnerResult(err, resultPayload)
-	}()
-
-	if !dir.DirExists(info.RepoData.GitConfig.Path) {
-		err = config.RepoNotFoundErr
-		return
+func updateStart(ctx context.Context, g git.Git, out io.Writer, payload updateInputPayload) (updateOutputPayload, error) {
+	res := updateOutputPayload{}
+	if !dir.DirExists(payload.RepoPath) {
+		return res, config.RepoNotFoundErr
 	}
 
 	// TODO: unroll this some way
-	if info.Args.UpdaterTag != "" {
-		repoUpdater, err := updater.MatchByTag(info.Args.UpdaterTag)
+	if payload.UpdaterTag != "" {
+		if payload.UpdaterTag == updater.IGNORE_TAG {
+			res.Skipped = true
+			return res, nil
+		}
+
+		repoUpdater, err := updater.MatchByTag(payload.UpdaterTag)
 		if err == nil {
-			resultPayload.UpdaterTag = repoUpdater.Tag()
-			err = repoUpdater.Update(info.Context, info.Output, info.RepoData.GitConfig.Path)
-			return
+			res.UpdaterTag = repoUpdater.Tag()
+			err := repoUpdater.Update(ctx, out, payload.RepoPath)
+			return res, err
 		}
 	}
 
-	d, err := dir.NewDirectory(info.RepoData.GitConfig.Path)
+	d, err := dir.NewDirectory(payload.RepoPath)
 	if err != nil {
-		return
+		return res, err
 	}
 	repoUpdater, err := updater.Infer(d)
 	if err != nil {
-		return
+		return res, err
 	}
-	err = repoUpdater.Update(info.Context, info.Output, info.RepoData.GitConfig.Path)
-	if err != nil {
-		return
+
+	if err := repoUpdater.Update(
+		ctx,
+		out,
+		payload.RepoPath,
+	); err != nil {
+		return res, err
 	}
-	resultPayload.UpdaterTag = repoUpdater.Tag()
+
+	res.UpdaterTag = repoUpdater.Tag()
+	return res, nil
 }
 
-func updaterListStart(info runner.RunnerInfo[updateOutputPayload, updateInputPayload]) {
-	var err error
-	resultPayload := updateOutputPayload{
-		RepoName: info.RepoData.Name,
-	}
-	defer func() {
-		info.Result <- runner.NewRunnerResult(err, resultPayload)
-	}()
-
-	if !dir.DirExists(info.RepoData.GitConfig.Path) {
-		return
+func updaterListStart(ctx context.Context, g git.Git, payload updateInputPayload) (updateOutputPayload, error) {
+	res := updateOutputPayload{}
+	if !dir.DirExists(payload.RepoPath) {
+		return res, config.RepoNotFoundErr
 	}
 
-	if info.Args.UpdaterTag != "" {
-		if repoUpdater, err := updater.MatchByTag(info.Args.UpdaterTag); err != nil {
-			resultPayload.UpdaterTag = repoUpdater.Tag()
-			return
+	if payload.UpdaterTag != "" {
+		if payload.UpdaterTag == updater.IGNORE_TAG {
+			res.Skipped = true
+			return res, nil
+		}
+		if repoUpdater, err := updater.MatchByTag(payload.UpdaterTag); err != nil {
+			res.UpdaterTag = repoUpdater.Tag()
+			return res, err
 		}
 	}
 
-	d, err := dir.NewDirectory(info.RepoData.GitConfig.Path)
+	d, err := dir.NewDirectory(payload.RepoPath)
 	if err != nil {
-		return
+		return res, err
 	}
 	repoUpdater, err := updater.Infer(d)
 	if err != nil {
-		return
+		return res, err
 	}
-	resultPayload.UpdaterTag = repoUpdater.Tag()
-	resultPayload.Inferred = true
+	res.UpdaterTag = repoUpdater.Tag()
+	res.Inferred = true
+	return res, nil
 }
 
 func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
@@ -102,34 +105,34 @@ func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Use:   "update",
 		Short: "Updates your repositories",
 		Run: func(cmd *cobra.Command, args []string) {
-			wc := make(chan runner.RunnerResult[updateOutputPayload])
+			repos := cm.GetRepos()
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer stop()
 
-			handler := updateStart
-			if *list == true {
-				handler = updaterListStart
-			}
-			rConfig := runner.RunnerFuncWrapperInfo[updateOutputPayload]{
-				Context: ctx,
-				Git:     g,
-				Result:  wc,
-			}
-			if *output {
-				rConfig.Output = os.Stdout
-			}
-			wp := runner.WrapRunnerFunc(handler, rConfig)
+			updateArgs := make([]updateInputPayload, 0, len(repos))
+			updateFn := func(args updateInputPayload) (updateOutputPayload, error) {
+				if *list {
+					return updaterListStart(ctx, g, args)
+				}
 
-			repos := cm.GetRepos()
+				var out io.Writer = nil
+				if *output {
+					out = os.Stdout
+				}
+				return updateStart(ctx, g, out, args)
+			}
+
 			for _, repo := range repos {
-				go wp(repo, updateInputPayload{
+				updateArgs = append(updateArgs, updateInputPayload{
 					UpdaterTag: repo.Config.Updater,
+					RepoPath:   repo.GitConfig.Path,
 				})
 			}
 
-			for i := 0; i < len(repos); i++ {
-				res := <-wc
-				logger := log.NewRepoLogger(os.Stdout, res.Result.RepoName)
+			results := runner.Run(updateFn, updateArgs)
+
+			for i, res := range results {
+				logger := log.NewRepoLogger(os.Stdout, repos[i].Name)
 
 				if *list {
 					if res.Error != nil {
@@ -137,16 +140,26 @@ func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 						continue
 					}
 
-					if res.Result.Inferred {
-						logger.Info(": inferred => %s", res.Result.UpdaterTag)
+					if res.Res.Skipped {
+						logger.Info(": skipped")
+						continue
+					}
+
+					if res.Res.Inferred {
+						logger.Info(": inferred => %s", res.Res.UpdaterTag)
 					} else {
-						logger.Info(": matching => %s", res.Result.UpdaterTag)
+						logger.Info(": matching => %s", res.Res.UpdaterTag)
 					}
 					continue
 				}
 
 				if res.Error != nil {
 					logger.Error("not updated => %s", res.Error.Error())
+					continue
+				}
+
+				if res.Res.Skipped {
+					logger.Info("skipped")
 				} else {
 					logger.Success("updated 👌")
 				}
