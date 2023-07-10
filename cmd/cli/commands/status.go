@@ -2,7 +2,6 @@ package commands
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/AzraelSec/glock/internal/config"
@@ -16,62 +15,51 @@ import (
 type statusOutputPayload struct {
 	Branch     string
 	Dirty      bool
-	Padding    int
 	RemoteDiff bool
 	RepoName   string
 }
-type statusInputPayload struct {
-	maxLength int
-}
 
-func statusRepo(info runner.RunnerInfo[statusOutputPayload, statusInputPayload]) {
-	var err error
-	res := statusOutputPayload{
-		RepoName: info.RepoData.Name,
-	}
-	defer func() {
-		info.Result <- runner.NewRunnerResult(err, res)
-	}()
+func statusRepo(g git.Git, gr git.Repo) (statusOutputPayload, error) {
+	res := statusOutputPayload{}
 
-	if !dir.DirExists(info.RepoData.GitConfig.Path) {
-		err = config.RepoNotFoundErr
-		return
+	if !dir.DirExists(gr.Path) {
+		return res, config.RepoNotFoundErr
 	}
 
-	status, ierr := info.Git.Status(info.RepoData.GitConfig)
-	if ierr != nil {
-		err = ierr
-		return
+	status, err := g.Status(gr)
+	if err != nil {
+		return res, err
 	}
-	diff, _ := info.Git.DiffersFromRemote(info.RepoData.GitConfig)
+	diff, _ := g.DiffersFromRemote(gr)
 
-	res.Padding = info.Args.maxLength - len(info.RepoData.Name)
 	res.Branch = string(status.Branch)
 	res.Dirty = status.Change
 	res.RemoteDiff = diff
+
+	return res, nil
 }
 
-func prettyPrint(args runner.RunnerResult[statusOutputPayload]) string {
+func prettyPrint(repoName string, maxLength int, result runner.Result[statusOutputPayload]) string {
 	redBold := color.New(color.Bold).Add(color.FgRed).SprintfFunc()
 	blueBold := color.New(color.Bold).Add(color.FgBlue).SprintfFunc()
 
-	name := args.Result.RepoName
-	padding := strings.Repeat(" ", args.Result.Padding)
-	branch := string(args.Result.Branch)
+	padding := strings.Repeat(" ", maxLength-len(repoName))
+	name := repoName
+	branch := string(result.Res.Branch)
 
-	if args.Error != nil {
-		return fmt.Sprintf("[%s] %s=> ERROR: %s\n", redBold(name), padding, redBold(args.Error.Error()))
+	if result.Error != nil {
+		return fmt.Sprintf("[%s] %s=> ERROR: %s\n", redBold(repoName), padding, redBold(result.Error.Error()))
 	}
 
 	changeLabel := ""
-	if args.Result.Dirty {
+	if result.Res.Dirty {
 		changeLabel = "🛠 "
 		name = blueBold(name)
 		branch = blueBold(branch)
 	}
 
 	diffLabel := ""
-	if args.Result.RemoteDiff {
+	if result.Res.RemoteDiff {
 		diffLabel = "🧨"
 	}
 
@@ -84,42 +72,24 @@ func statusFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Short: "Retrieves the current branch on each repo",
 		Run: func(cmd *cobra.Command, args []string) {
 			repos := cm.GetRepos()
-			wc := make(chan runner.RunnerResult[statusOutputPayload])
-			wp := runner.WrapRunnerFunc(statusRepo, runner.RunnerFuncWrapperInfo[statusOutputPayload]{
-				Git:    g,
-				Result: wc,
-			})
-
 			lrn := 1
+
+			statusArgs := make([]git.Repo, 0, len(repos))
+			statusFn := func(gr git.Repo) (statusOutputPayload, error) {
+				return statusRepo(g, gr)
+			}
+
 			for _, repo := range repos {
 				if lg := len(repo.Name); lg > lrn {
 					lrn = lg
 				}
+				statusArgs = append(statusArgs, repo.GitConfig)
 			}
 
-			for _, repo := range repos {
-				go wp(repo, statusInputPayload{maxLength: lrn})
-			}
+			results := runner.Run(statusFn, statusArgs)
 
-			res := []struct {
-				repoName string
-				output   string
-			}{}
-			for i := 0; i < len(repos); i++ {
-				info := <-wc
-				res = append(res, struct {
-					repoName string
-					output   string
-				}{
-					repoName: info.Result.RepoName,
-					output:   prettyPrint(info),
-				})
-			}
-			sort.Slice(res, func(i, j int) bool {
-				return res[i].repoName < res[j].repoName
-			})
-			for _, rs := range res {
-				fmt.Print(rs.output)
+			for i, res := range results {
+				fmt.Print(prettyPrint(repos[i].Name, lrn, res))
 			}
 		},
 	}

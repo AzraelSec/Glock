@@ -2,7 +2,6 @@ package commands
 
 import (
 	"os"
-	"sort"
 
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/log"
@@ -14,47 +13,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type resetOutputPayload struct {
-	RepoName string
-}
 type resetInputPayload struct {
-	SkipPull bool
+	skipPull bool
+	gitRepo  git.Repo
 }
 
-func resetRepo(info runner.RunnerInfo[resetOutputPayload, resetInputPayload]) {
-	var err error
-	res := resetOutputPayload{
-		RepoName: info.RepoData.Name,
-	}
-	defer func() {
-		info.Result <- runner.NewRunnerResult(err, res)
-	}()
-
-	if !dir.DirExists(info.RepoData.GitConfig.Path) {
-		err = config.RepoNotFoundErr
-		return
+func resetRepo(g git.Git, payload resetInputPayload) error {
+	if !dir.DirExists(payload.gitRepo.Path) {
+		return config.RepoNotFoundErr
 	}
 
-	branch, err := info.Git.CurrentBranch(info.RepoData.GitConfig)
+	branch, err := g.CurrentBranch(payload.gitRepo)
 	if err != nil {
-		return
+		return err
 	}
-	if branch == git.BranchName(info.RepoData.Config.Remote) {
-		return
-	}
-
-	err = info.Git.Switch(info.RepoData.GitConfig, info.RepoData.GitConfig.Refs, false)
-	if err != nil {
-		return
+	if branch == git.BranchName(payload.gitRepo.Refs) {
+		return nil
 	}
 
-	if info.Args.SkipPull {
-		return
+	if err := g.Switch(payload.gitRepo, payload.gitRepo.Refs, false); err != nil {
+		return err
 	}
-	err = info.Git.Pull(info.RepoData.GitConfig, false)
-	if err != nil {
-		return
+	if payload.skipPull {
+		return nil
 	}
+
+	if err := g.Pull(payload.gitRepo, false); err != nil {
+		return err
+	}
+	return nil
 }
 
 func resetFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
@@ -70,32 +57,26 @@ func resetFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 				return
 			}
 
-			wc := make(chan runner.RunnerResult[resetOutputPayload])
-			wp := runner.WrapRunnerFunc(resetRepo, runner.RunnerFuncWrapperInfo[resetOutputPayload]{
-				Git:    g,
-				Result: wc,
-			})
-
-			for _, repo := range repos {
-				go wp(repo, resetInputPayload{
-					SkipPull: *skipPull,
+			resetArgs := make([]git.Repo, 0, len(repos))
+			resetFn := func(r git.Repo) (struct{}, error) {
+				return struct{}{}, resetRepo(g, resetInputPayload{
+					skipPull: *skipPull,
+					gitRepo:  r,
 				})
 			}
 
-			res := []runner.RunnerResult[resetOutputPayload]{}
-			for i := 0; i < len(repos); i++ {
-				res = append(res, <-wc)
+			for _, repo := range repos {
+				resetArgs = append(resetArgs, repo.GitConfig)
 			}
-			sort.Slice(res, func(i, j int) bool {
-				return res[i].Result.RepoName < res[j].Result.RepoName
-			})
 
-			for _, rs := range res {
-				logger := log.NewRepoLogger(os.Stdout, rs.Result.RepoName)
-				if rs.Error != nil {
-					logger.Error(rs.Error.Error())
+			results := runner.Run(resetFn, resetArgs)
+
+			for i, res := range results {
+				logger := log.NewRepoLogger(os.Stdout, repos[i].Name)
+				if res.Error != nil {
+					logger.Error(res.Error.Error())
 				} else {
-					logger.Success("🏠")
+					logger.Success("Came back home 🏠")
 				}
 			}
 		},

@@ -7,47 +7,24 @@ import (
 	"github.com/AzraelSec/glock/pkg/git"
 )
 
-type cleanCheckOutputPayload struct {
-	Changed  bool
-	RepoName string
-}
-
-func cleanCheckRepo(info runner.RunnerInfo[cleanCheckOutputPayload, interface{}]) {
-	var err error
-	res := cleanCheckOutputPayload{
-		RepoName: info.RepoData.Name,
-	}
-	defer func() {
-		info.Result <- runner.NewRunnerResult(err, res)
-	}()
-	if !dir.DirExists(info.RepoData.GitConfig.Path) {
-		err = config.RepoNotFoundErr
-		return
-	}
-
-	res.Changed, err = info.Git.HasChanges(info.RepoData.GitConfig)
-}
-
 func AllClean(repos []config.LiveRepo, g git.Git) bool {
-	wc := make(chan runner.RunnerResult[cleanCheckOutputPayload])
-	wp := runner.WrapRunnerFunc(cleanCheckRepo, runner.RunnerFuncWrapperInfo[cleanCheckOutputPayload]{
-		Git:    g,
-		Result: wc,
-	})
-
-	for _, repo := range repos {
-		go wp(repo, nil)
+	hasChanges := func(repo config.LiveRepo) (bool, error) {
+		if !dir.DirExists(repo.GitConfig.Path) {
+			return false, config.RepoNotFoundErr
+		}
+		return g.HasChanges(repo.GitConfig)
 	}
+
+	results := runner.Run(hasChanges, repos)
 
 	exit := true
-	for i := 0; i < len(repos); i++ {
-		res := <-wc
+	for i := 0; exit && i < len(repos); i++ {
+		res := results[i]
+		// TODO: enforce this error handling
 		if res.Error != nil {
 			continue
 		}
-		if res.Result.Changed {
-			exit = false
-		}
+		exit = exit && !res.Res // <- I'm not sure if it should be && or ||, and if there should be a ! before res.Res
 	}
 	return exit
 }

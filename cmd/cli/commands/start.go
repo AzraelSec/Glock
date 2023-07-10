@@ -16,57 +16,50 @@ import (
 )
 
 type startInputPayload struct {
+	gitPath  string
 	startCmd string
 	stopCmd  string
 }
 
 type startOutputPayload struct {
-	Pid      int
-	RepoName string
-	RetCode  int
+	Pid     int
+	RetCode int
 }
 
-func startRepo(info runner.RunnerInfo[startOutputPayload, startInputPayload]) {
-	var err error
-	resultPayload := startOutputPayload{
-		Pid:      -1,
-		RepoName: info.RepoData.Name,
-		RetCode:  -1,
+func startRepo(ctx context.Context, g git.Git, payload startInputPayload) (startOutputPayload, error) {
+	res := startOutputPayload{
+		Pid:     -1,
+		RetCode: -1,
 	}
-	defer func() {
-		info.Result <- runner.NewRunnerResult(err, resultPayload)
-	}()
 
-	if !dir.DirExists(info.RepoData.GitConfig.Path) {
-		err = config.RepoNotFoundErr
-		return
+	if !dir.DirExists(payload.gitPath) {
+		return res, config.RepoNotFoundErr
 	}
 
 	startProcess := shell.NewSyncShell(shell.ShellOps{
-		ExecPath: info.RepoData.GitConfig.Path,
-		Cmd:      info.Args.startCmd,
-		Ctx:      info.Context,
+		ExecPath: payload.gitPath,
+		Cmd:      payload.startCmd,
+		Ctx:      ctx,
 	})
 	if rc, err := startProcess.Start(os.Stdout); shell.IgnoreInterrupt(err) != nil {
-		err = fmt.Errorf("impossible to start => %v", err)
-		return
+		return res, fmt.Errorf("impossible to start => %v", err)
 	} else {
-		resultPayload.RetCode = rc
-		resultPayload.Pid = startProcess.Pid
+		res.RetCode = rc
+		res.Pid = startProcess.Pid
 	}
 
-	if info.Args.stopCmd == "" {
-		return
+	if payload.stopCmd == "" {
+		return res, nil
 	}
 
 	stopProcess := shell.NewSyncShell(shell.ShellOps{
-		ExecPath: info.RepoData.GitConfig.Path,
-		Cmd:      info.Args.stopCmd,
+		ExecPath: payload.gitPath,
+		Cmd:      payload.stopCmd,
 	})
-	if _, err = stopProcess.Start(os.Stdout); err != nil {
-		err = fmt.Errorf("impossible to end => %v", err)
-		return
+	if _, err := stopProcess.Start(os.Stdout); err != nil {
+		return res, fmt.Errorf("impossible to end => %v", err)
 	}
+	return res, nil
 }
 
 func startFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
@@ -74,34 +67,32 @@ func startFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Use:   "start",
 		Short: "Start the development stack 🚀",
 		Run: func(cmd *cobra.Command, args []string) {
-			tw := 0
-			waitingChannel := make(chan runner.RunnerResult[startOutputPayload])
+			repos := cm.GetRepos()
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer stop()
 
-			wp := runner.WrapRunnerFunc(startRepo, runner.RunnerFuncWrapperInfo[startOutputPayload]{
-				Context: ctx,
-				Output:  os.Stdout,
-				Git:     g,
-				Result:  waitingChannel,
-			})
-
-			for _, repo := range cm.GetRepos() {
-				// TODO: this should be checked inside the goroutine function
+			filteredRepos := []config.LiveRepo{}
+			for _, repo := range repos {
 				if repo.Config.StartCmd == "" {
 					continue
 				}
+				filteredRepos = append(filteredRepos, repo)
+			}
 
-				tw = tw + 1
-				go wp(repo, startInputPayload{
+			startArgs := make([]startInputPayload, 0, len(filteredRepos))
+			startFn := func(args startInputPayload) (startOutputPayload, error) {
+				return startRepo(ctx, g, args)
+			}
+
+			for _, repo := range filteredRepos {
+				startArgs = append(startArgs, startInputPayload{
 					startCmd: repo.Config.StartCmd,
 					stopCmd:  repo.Config.StopCmd,
+					gitPath:  repo.GitConfig.Path,
 				})
 			}
 
-			for i := 0; i < tw; i++ {
-				<-waitingChannel
-			}
+			runner.Run(startFn, startArgs)
 
 			color.Green("Execution completed")
 		},
