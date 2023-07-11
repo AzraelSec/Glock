@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/AzraelSec/glock/internal/config"
@@ -67,13 +68,17 @@ func switchFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 				color.Green("Switches:")
 			}
 
-			errors := []struct {
+			errs := []struct {
 				idx int
 				err error
 			}{}
 			for i, rs := range results {
 				if rs.Error != nil {
-					errors = append(errors, struct {
+					if errors.Is(rs.Error, git.InvalidReferenceErr) {
+						continue
+					}
+
+					errs = append(errs, struct {
 						idx int
 						err error
 					}{
@@ -86,10 +91,10 @@ func switchFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 				fmt.Printf("\t -> %s\n", repos[i].Name)
 			}
 
-			if len(errors) != 0 {
+			if len(errs) != 0 {
 				color.Red("Errors:")
 			}
-			for _, err := range errors {
+			for _, err := range errs {
 				fmt.Printf("\t -> %s {%s}\n", repos[err.idx].Name, err.err.Error())
 			}
 		},

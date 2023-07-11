@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"strings"
 
 	"github.com/AzraelSec/glock/pkg/dir"
 	"github.com/AzraelSec/glock/pkg/git"
 	"github.com/AzraelSec/glock/pkg/git_command_builder"
 )
+
 
 type ExternalGit struct{}
 
@@ -123,11 +125,20 @@ func (eg ExternalGit) Switch(repo git.Repo, branch git.BranchName, force bool) e
 		return errors.New("unable to locate repo")
 	}
 
-	return gitcb.NewCommandBuilder().
+	err := gitcb.NewCommandBuilder().
 		SetRepo(repo).
 		Arg("switch", string(branch)).
 		ArgIf(force, "-f").
 		Run()
+
+	if err != nil {
+		ee, ok := err.(*exec.ExitError)
+		if ok && strings.Contains(string(ee.Stderr), "invalid reference"){
+			err = git.InvalidReferenceErr
+		}
+	}
+
+	return err
 }
 
 func (eg ExternalGit) Pull(repo git.Repo, rebase bool) error {
