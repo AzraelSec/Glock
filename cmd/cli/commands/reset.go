@@ -27,21 +27,18 @@ func resetRepo(g git.Git, payload resetInputPayload) error {
 	if err != nil {
 		return err
 	}
-	if branch == git.BranchName(payload.gitRepo.Refs) {
-		return nil
+
+	if branch != git.BranchName(payload.gitRepo.Refs) {
+		if err := g.Switch(payload.gitRepo, payload.gitRepo.Refs, false); err != nil {
+			return err
+		}
 	}
 
-	if err := g.Switch(payload.gitRepo, payload.gitRepo.Refs, false); err != nil {
-		return err
-	}
 	if payload.skipPull {
 		return nil
 	}
 
-	if err := g.Pull(payload.gitRepo, false); err != nil {
-		return err
-	}
-	return nil
+	return g.Pull(payload.gitRepo, false)
 }
 
 func resetFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
