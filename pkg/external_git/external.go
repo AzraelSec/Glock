@@ -111,7 +111,7 @@ func (g ExternalGit) DiffersFromRemote(repo git.Repo) (bool, error) {
 	ret := gitcb.NewCommandBuilder().
 		SetRepo(repo).
 		Arg("diff", "--exit-code", "--quiet").
-		Arg(string(br), fmt.Sprintf("origin/%s", string(br))).
+		Arg(string(br), "@{upstream}").
 		RunWithExitCode()
 	if ret == -1 {
 		return false, errors.New("returned with -1")
