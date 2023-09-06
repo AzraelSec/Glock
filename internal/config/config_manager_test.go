@@ -10,9 +10,6 @@ const completeConfigYamlSrc = `
 open_command: open
 root_path: /tmp/
 root_main_stream: master
-credentials:
-  github_token: G1tHub
-  shortcut_token: 5h0r7cu7
 repos:
   first:
     remote: git@github.com:AzraelSec/first.git
@@ -27,10 +24,6 @@ const completeConfigJsonSrc = `{
 	"open_command": "open",
 	"root_path": "/tmp/",
 	"root_main_stream": "master",
-	"credentials": {
-		"github_token": "G1tHub",
-		"shortcut_token": "5h0r7cu7"
-	},
 	"repos": {
 		"first": {
 			"remote": "git@github.com:AzraelSec/first.git",

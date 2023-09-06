@@ -2,10 +2,6 @@ open_command: open
 root_path: /some/path/ 
 root_main_stream: master
 
-credentials:
-  github_token: SECRET
-  shortcut_token: SECRET
-
 repos:
   api-router:
     remote: git@github.com:AzraelSec/glock.git

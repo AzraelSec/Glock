@@ -27,7 +27,7 @@ To get started with Glock, follow these simple steps:
 1. Clone the Glock repository to your local machine using the following command:
 
    ```bash
-   git clone https://github.com/your-username/glock.git
+   git clone https://github.com/AzraelSec/glock.git
    ```
 
 2. Change to the project directory:
@@ -58,26 +58,6 @@ To get started with Glock, follow these simple steps:
 
 Glock's extensive documentation will guide you through its various features and provide in-depth explanations of its commands. To access the documentation, visit the [Glock Wiki](https://github.com/your-username/glock/wiki). Here you will find detailed usage examples, best practices, and tips to optimize your workflow.
 
-## Contributing
-
-We welcome contributions from the community to make Glock even better! Whether you have ideas for new features, bug fixes, or improvements to the existing codebase, we appreciate your input. To contribute, please follow our [Contribution Guidelines](CONTRIBUTING.md) and submit a pull request.
-
 ## License
 
 Glock is released under the [MIT License](LICENSE). You are free to use, modify, and distribute this software in compliance with the terms of the license.
-
-## Support
-
-If you encounter any issues or have questions related to Glock, feel free to reach out to our support team. You can contact us via [GitHub Issues](https://github.com/your-username/glock/issues).
-
-## Acknowledgments
-
-We would like to express our gratitude to all the contributors who have helped shape Glock into the powerful tool it is today.
-
- Your dedication and enthusiasm have been instrumental in the project's success.
-
-Special thanks to our users for their valuable feedback and suggestions. Your input continues to inspire us to enhance Glock and make it an indispensable asset for multi-repository project management.
-
-## Stay Connected
-
-Stay up to date with the latest news and announcements about Glock by following us on [Twitter](https://twitter.com/glock_project). We regularly share updates, tips, and insights to help you get the most out of Glock for your multi-repository projects.

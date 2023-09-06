@@ -8,11 +8,6 @@ type Global struct {
 	RootRefs    string `yaml:"root_main_stream,omitempty" json:"root_main_stream"`
 }
 
-type Credentials struct {
-	Github   string `yaml:"github_token,omitempty" json:"github_token,omitempty"`
-	Shortcut string `yaml:"shortcut_token,omitempty" json:"shortcut_token,omitempty"`
-}
-
 type Repo struct {
 	Updater    string `yaml:"updater,omitempty" json:"updater,omitempty"`
 	StartCmd   string `yaml:"start_cmd,omitempty" json:"start_cmd,omitempty"`
@@ -24,7 +19,6 @@ type Repo struct {
 }
 
 type Config struct {
-	Credentials Credentials      `yaml:"credentials,omitempty" json:"credentials,omitempty"`
 	Repos       map[string]*Repo `yaml:"repos" json:"repos"`
 	Global      `yaml:",inline"`
 }
