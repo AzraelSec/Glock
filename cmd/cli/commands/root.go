@@ -14,7 +14,7 @@ import (
 )
 
 const CONFIG_PATH_ENV = "GLOCK_CONFIG_PATH"
-const VERSION = "0.1"
+const VERSION = "0.0.1"
 const CONFIG_FILE_NAME = "glock.yml"
 const MAX_CONFIG_FILE_DEPTH = 20
 
