@@ -2,23 +2,57 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"os/signal"
+	"path"
+	"slices"
+	"sync"
+	"time"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/log"
 	"github.com/AzraelSec/glock/internal/runner"
 	"github.com/AzraelSec/glock/pkg/dir"
 	"github.com/AzraelSec/glock/pkg/git"
 	"github.com/AzraelSec/glock/pkg/shell"
+	"github.com/AzraelSec/godotenv"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
+type startServicePayload struct {
+	tag string
+	cmd string
+}
+
+func serviceRun(ctx context.Context, g git.Git, configPath string, envFilenames []string, payload startServicePayload) (startOutputPayload, error) {
+	res := startOutputPayload{
+		Pid:     -1,
+		RetCode: -1,
+	}
+
+	startProcess := shell.NewSyncShell(shell.ShellOps{
+		ExecPath: configPath,
+		Cmd:      payload.cmd,
+		Ctx:      ctx,
+	})
+
+	tsw := log.NewTagStreamWriter(payload.tag, os.Stdout)
+	rc, err := startProcess.Start(tsw)
+	if err != nil {
+		return res, err
+	}
+
+	res.RetCode = rc
+	res.Pid = startProcess.Pid
+
+	return res, nil
+}
+
 type startInputPayload struct {
-	gitPath  string
-	startCmd string
-	stopCmd  string
+	gitPath string
+	cmd     string
+	name    string
 }
 
 type startOutputPayload struct {
@@ -26,7 +60,7 @@ type startOutputPayload struct {
 	RetCode int
 }
 
-func startRepo(ctx context.Context, g git.Git, payload startInputPayload) (startOutputPayload, error) {
+func repoRun(ctx context.Context, g git.Git, envFilenames []string, payload startInputPayload) (startOutputPayload, error) {
 	res := startOutputPayload{
 		Pid:     -1,
 		RetCode: -1,
@@ -36,65 +70,149 @@ func startRepo(ctx context.Context, g git.Git, payload startInputPayload) (start
 		return res, config.RepoNotFoundErr
 	}
 
+	denv, _ := godotenv.ReadFrom(payload.gitPath, false, envFilenames...)
 	startProcess := shell.NewSyncShell(shell.ShellOps{
 		ExecPath: payload.gitPath,
-		Cmd:      payload.startCmd,
+		Cmd:      payload.cmd,
 		Ctx:      ctx,
+		Env:      denv,
 	})
-	if rc, err := startProcess.Start(os.Stdout); shell.IgnoreInterrupt(err) != nil {
-		return res, fmt.Errorf("impossible to start => %v", err)
-	} else {
-		res.RetCode = rc
-		res.Pid = startProcess.Pid
+
+	tsw := log.NewTagStreamWriter(payload.name, os.Stdout)
+	rc, err := startProcess.Start(tsw)
+	if err != nil {
+		return res, err
 	}
 
-	if payload.stopCmd == "" {
-		return res, nil
-	}
+	res.RetCode = rc
+	res.Pid = startProcess.Pid
 
-	stopProcess := shell.NewSyncShell(shell.ShellOps{
-		ExecPath: payload.gitPath,
-		Cmd:      payload.stopCmd,
-	})
-	if _, err := stopProcess.Start(os.Stdout); err != nil {
-		return res, fmt.Errorf("impossible to end => %v", err)
-	}
 	return res, nil
 }
 
 func startFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
-	return &cobra.Command{
+	var filteredRepos *[]string
+
+	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the development stack 🚀",
 		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.GetRepos()
-			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-			defer stop()
-
-			filteredRepos := []config.LiveRepo{}
-			for _, repo := range repos {
-				if repo.Config.StartCmd == "" {
-					continue
+			repos := []config.LiveRepo{}
+			if filteredRepos == nil || len(*filteredRepos) == 0 {
+				repos = cm.Repos
+			} else {
+				for _, repo := range cm.Repos {
+					if slices.Contains(*filteredRepos, repo.Name) {
+						repos = append(repos, repo)
+					}
 				}
-				filteredRepos = append(filteredRepos, repo)
 			}
 
-			startArgs := make([]startInputPayload, 0, len(filteredRepos))
+			if len(repos) == 0 {
+				color.Red("You cannot start your stack with no repos selected")
+				return
+			}
+
+			executableRepo := []config.LiveRepo{}
+			disposableRepo := []config.LiveRepo{}
+			for _, repo := range repos {
+				if len(repo.Config.OnStart) != 0 {
+					executableRepo = append(executableRepo, repo)
+				}
+				if repo.Config.OnStop != "" {
+					disposableRepo = append(disposableRepo, repo)
+				}
+			}
+
+			executableService := []config.Services{}
+			disposableService := []config.Services{}
+
+			for _, srv := range cm.Services {
+				if srv.Cmd != "" {
+					executableService = append(executableService, srv)
+				}
+				if srv.Dispose != "" {
+					disposableService = append(disposableService, srv)
+				}
+			}
+
+			onStartCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+			defer stop()
+			startServiceArgs := make([]startServicePayload, 0, len(executableService))
+			startServiceFn := func(payload startServicePayload) (startOutputPayload, error) {
+				return serviceRun(onStartCtx, g, path.Dir(cm.ConfigPath), cm.EnvFilenames, payload)
+			}
+			for _, srv := range executableService {
+				startServiceArgs = append(startServiceArgs, startServicePayload{tag: srv.Tag, cmd: srv.Cmd})
+			}
+
+			startArgs := make([]startInputPayload, 0, len(executableRepo))
 			startFn := func(args startInputPayload) (startOutputPayload, error) {
-				return startRepo(ctx, g, args)
+				return repoRun(onStartCtx, g, cm.EnvFilenames, args)
+			}
+			for _, repo := range executableRepo {
+				for _, startCmd := range repo.Config.OnStart {
+					startArgs = append(startArgs, startInputPayload{
+						cmd:     startCmd,
+						gitPath: repo.GitConfig.Path,
+						name:    repo.Name,
+					})
+				}
 			}
 
-			for _, repo := range filteredRepos {
-				startArgs = append(startArgs, startInputPayload{
-					startCmd: repo.Config.StartCmd,
-					stopCmd:  repo.Config.StopCmd,
-					gitPath:  repo.GitConfig.Path,
+			onServiceStopCtx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
+			defer cancel()
+			stopServiceArgs := make([]startServicePayload, 0, len(disposableService))
+			stopServiceFn := func(payload startServicePayload) (startOutputPayload, error) {
+				return serviceRun(onServiceStopCtx, g, path.Dir(cm.ConfigPath), cm.EnvFilenames, payload)
+			}
+			for _, srv := range disposableService {
+				stopServiceArgs = append(stopServiceArgs, startServicePayload{tag: srv.Tag, cmd: srv.Dispose})
+			}
+			onStopCtx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
+			defer cancel()
+
+			stopArgs := make([]startInputPayload, 0, len(disposableRepo))
+			stopFn := func(args startInputPayload) (startOutputPayload, error) {
+				return repoRun(onStopCtx, g, cm.EnvFilenames, args)
+			}
+			for _, repo := range executableRepo {
+				stopArgs = append(stopArgs, startInputPayload{
+					cmd:     repo.Config.OnStop,
+					gitPath: repo.GitConfig.Path,
 				})
 			}
 
-			runner.Run(startFn, startArgs)
+			wg := sync.WaitGroup{}
+			wg.Add(2)
+			go func() {
+				runner.Run(startServiceFn, startServiceArgs)
+				wg.Done()
+			}()
+			// note: is there a way to get rid of this?
+			time.Sleep(5 * time.Second)
+			go func() {
+				runner.Run(startFn, startArgs)
+				wg.Done()
+			}()
+			wg.Wait()
+
+			wg.Add(2)
+			go func() {
+				runner.Run(stopFn, stopArgs)
+				wg.Done()
+			}()
+			go func() {
+				runner.Run(stopServiceFn, stopServiceArgs)
+				wg.Done()
+			}()
+			wg.Wait()
 
 			color.Green("Execution completed")
 		},
 	}
+
+	filteredRepos = cmd.Flags().StringArrayP("repos", "r", nil, "list of repository you want to start")
+
+	return cmd
 }

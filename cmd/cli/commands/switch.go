@@ -43,7 +43,7 @@ func switchFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Short: "Changes the branch to the given one - for all the repos that has it",
 		Args:  cobra.MinimumNArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.GetRepos()
+			repos := cm.Repos
 
 			if !*force && !routine.AllClean(repos, g) {
 				color.Red("Some of the repositories are not clean - it's not safe to switch")

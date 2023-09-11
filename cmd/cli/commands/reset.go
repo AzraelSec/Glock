@@ -47,7 +47,7 @@ func resetFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Use:   "reset",
 		Short: "Reset the branch to its original base branch and pull changes from remote",
 		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.GetRepos()
+			repos := cm.Repos
 
 			if !routine.AllClean(repos, g) {
 				color.Red("Some of the repositories are not clean - it's not safe to switch")

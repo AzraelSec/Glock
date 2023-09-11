@@ -25,13 +25,18 @@ var rootCmd = &cobra.Command{
 }
 
 func ExecuteRoot() {
+	cfPath, err := getConfigFilePath()
+	if err != nil {
+		color.Red("Impossible to identify a valid %s config file", CONFIG_FILE_NAME)
+		return
+	}
+
 	// TODO: Make this lazy so that it's possible to create commands
 	// that don't require the configuration file (remote init)
 	gm := external_git.NewExternalGit()
-	cm, err := loadConfigManager()
-
+	cm, err := loadConfigManager(cfPath)
 	if err != nil {
-		color.Red("Impossible to find a valid %s nearby configuration file", CONFIG_FILE_NAME)
+		color.Red("Impossible to find a valid %s nearby configuration file.\nDetails: %v", CONFIG_FILE_NAME, err)
 		return
 	}
 
@@ -47,21 +52,24 @@ func ExecuteRoot() {
 	rootCmd.Execute()
 }
 
-func loadConfigManager() (*config.ConfigManager, error) {
-	configPath := ""
-	wd, err := os.Getwd()
-	if err == nil {
-		configPath, _ = findNearestConfigFile(wd, MAX_CONFIG_FILE_DEPTH)
-	}
-
+func getConfigFilePath() (string, error) {
 	if v, exists := os.LookupEnv(CONFIG_PATH_ENV); exists {
-		configPath = v
+		return v, nil
 	}
 
-	if configPath == "" {
-		return nil, errors.New("no configuration file found")
+	wd, err := os.Getwd()
+	if err != nil {
+		return "", errors.New("impossible to find the current directory")
 	}
 
+	configPath, err := findNearestConfigFile(wd, MAX_CONFIG_FILE_DEPTH)
+	if err != nil {
+		return "", errors.New("no configuration file found")
+	}
+	return configPath, nil
+}
+
+func loadConfigManager(configPath string) (*config.ConfigManager, error) {
 	rawConfig, err := os.ReadFile(configPath)
 	if err != nil {
 		return nil, err

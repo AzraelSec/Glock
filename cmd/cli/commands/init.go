@@ -15,7 +15,7 @@ func localInitFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Use:   "local",
 		Short: "Use a local configuration to clones the configured repos",
 		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.GetRepos()
+			repos := cm.Repos
 
 			initFn := func(cloneOps git.CloneOps) (struct{}, error) {
 				return struct{}{}, g.Clone(cloneOps)
