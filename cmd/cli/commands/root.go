@@ -36,7 +36,6 @@ func ExecuteRoot() {
 	}
 
 	rootCmd.AddCommand(
-		debugFactory(cm),
 		initFactory(cm, gm),
 		startFactory(cm, gm),
 		statusFactory(cm, gm),
