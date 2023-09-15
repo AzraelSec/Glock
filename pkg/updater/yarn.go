@@ -16,7 +16,7 @@ func (yarnUpdater) Tag() string {
 	return "yarn"
 }
 
-func (yarnUpdater) Update(ctx context.Context, w io.Writer,  path string) error {
+func (yarnUpdater) Update(ctx context.Context, w io.Writer, path string) error {
 	_, err := shell.NewSyncShell(shell.ShellOps{
 		Cmd:      "yarn",
 		ExecPath: path,
@@ -40,4 +40,3 @@ func (yarnUpdater) Infer(d dir.Directory) (bool, error) {
 	}
 	return ok, nil
 }
-

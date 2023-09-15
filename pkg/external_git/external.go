@@ -11,7 +11,6 @@ import (
 	"github.com/AzraelSec/glock/pkg/git_command_builder"
 )
 
-
 type ExternalGit struct{}
 
 // ensure to implement the Git interface
@@ -133,7 +132,7 @@ func (eg ExternalGit) Switch(repo git.Repo, branch git.BranchName, force bool) e
 
 	if err != nil {
 		ee, ok := err.(*exec.ExitError)
-		if ok && strings.Contains(string(ee.Stderr), "invalid reference"){
+		if ok && strings.Contains(string(ee.Stderr), "invalid reference") {
 			err = git.InvalidReferenceErr
 		}
 	}

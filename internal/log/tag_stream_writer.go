@@ -11,11 +11,11 @@ import (
 )
 
 type TagStreamWriter struct {
-	tag            string
-	output         io.Writer
-	color          *color.Color
-	buffer         bytes.Buffer
-	nl bool
+	tag    string
+	output io.Writer
+	color  *color.Color
+	buffer bytes.Buffer
+	nl     bool
 }
 
 var fgColors = []color.Attribute{
@@ -27,7 +27,7 @@ var fgColors = []color.Attribute{
 	color.FgCyan,
 }
 
-func colorByTag(tag string) *color.Color{
+func colorByTag(tag string) *color.Color {
 	hash := md5.Sum([]byte(strings.ToLower(tag)))
 	index := int(binary.BigEndian.Uint32(hash[:])) % len(fgColors)
 

@@ -9,13 +9,13 @@ import (
 )
 
 type repoLogger struct {
-	output io.Writer
+	output   io.Writer
 	repoName string
 }
 
 func NewRepoLogger(output io.Writer, repoName string) log.Logger {
 	return repoLogger{
-		output: output,
+		output:   output,
 		repoName: repoName,
 	}
 }
