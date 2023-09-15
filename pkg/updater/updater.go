@@ -9,11 +9,13 @@ import (
 )
 
 const IGNORE_TAG = "ignore"
+
 var NoUpdaterErr = errors.New("no matching updater found")
 
 var updaters = []Updater{
 	yarnUpdater{},
 	npmBundler{},
+	pnpmBundler{},
 	bundlerUpdater{},
 	gomodUpdater{},
 }
