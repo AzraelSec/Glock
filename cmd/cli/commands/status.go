@@ -71,7 +71,7 @@ func statusFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Use:   "status",
 		Short: "Retrieves the current branch on each repo",
 		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.GetRepos()
+			repos := cm.Repos
 			lrn := 1
 
 			statusArgs := make([]git.Repo, 0, len(repos))

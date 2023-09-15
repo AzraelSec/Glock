@@ -1,3 +1,5 @@
+github.com/AzraelSec/godotenv v0.0.0-20230908093005-c32e98a71848 h1:i5qUAmLxemO5IramqhYJ/nCGgS2GTGWLsgY8NmSGQts=
+github.com/AzraelSec/godotenv v0.0.0-20230908093005-c32e98a71848/go.mod h1:JUHJQjuoNoSTw+htfqgZ7u5fx4BG7uED+DYDnNVDoy0=
 github.com/cpuguy83/go-md2man/v2 v2.0.2/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/fatih/color v1.15.0 h1:kOqh6YHBtK8aywxGerMG2Eq3H6Qgoqeo13Bk2Mv/nBs=
 github.com/fatih/color v1.15.0/go.mod h1:0h5ZqXfHYED7Bhv2ZJamyIOUej9KtShiJESRwBDUSsw=

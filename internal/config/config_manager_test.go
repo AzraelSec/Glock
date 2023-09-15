@@ -10,6 +10,16 @@ const completeConfigYamlSrc = `
 open_command: open
 root_path: /tmp/
 root_main_stream: master
+env_filenames:
+  - ".env.defaults"
+  - ".env.something"
+services:
+  - name: "virtual1"
+    cmd: "echo start"
+    dispose: "echo stop"
+  - name: "virtual2"
+    cmd: "echo start two"
+    dispose: "echo stop two"
 repos:
   first:
     remote: git@github.com:AzraelSec/first.git
@@ -24,6 +34,10 @@ const completeConfigJsonSrc = `{
 	"open_command": "open",
 	"root_path": "/tmp/",
 	"root_main_stream": "master",
+	"env_filenames": [
+  ".env.defaults",
+  ".env.something"
+	],
 	"repos": {
 		"first": {
 			"remote": "git@github.com:AzraelSec/first.git",
@@ -64,23 +78,19 @@ func TestNewConfigManagerYaml(t *testing.T) {
 		},
 	}
 
-	for _, tt := range repoTests {
-		repo := cm.Repos[tt.key]
-		if repo == nil {
-			t.Errorf("unexpected nil value for %s", tt.key)
+	for idx, tt := range repoTests {
+		repo := cm.Repos[idx]
+		if repo.Config.Remote != tt.remote {
+			t.Errorf("wanted: %s, got: %s", tt.remote, repo.Config.Remote)
 		}
-
-		if repo.Remote != tt.remote {
-			t.Errorf("wanted: %s, got: %s", tt.remote, repo.Remote)
+		if repo.Config.Path != tt.path {
+			t.Errorf("wanted: %s, got: %s", tt.path, repo.Config.Path)
 		}
-		if repo.Path != tt.path {
-			t.Errorf("wanted: %s, got: %s", tt.path, repo.Path)
+		if repo.Config.Refs != tt.main_stream {
+			t.Errorf("wanted: %s, got: %s", tt.main_stream, repo.Config.Refs)
 		}
-		if repo.Refs != tt.main_stream {
-			t.Errorf("wanted: %s, got: %s", tt.main_stream, repo.Refs)
-		}
-		if repo.ExcludeTag != tt.exclude {
-			t.Errorf("wanted: %t, got: %t", tt.exclude, repo.ExcludeTag)
+		if repo.Config.ExcludeTag != tt.exclude {
+			t.Errorf("wanted: %t, got: %t", tt.exclude, repo.Config.ExcludeTag)
 		}
 	}
 }
@@ -111,23 +121,19 @@ func TestNewConfigManagerJson(t *testing.T) {
 		},
 	}
 
-	for _, tt := range repoTests {
-		repo := cm.Repos[tt.key]
-		if repo == nil {
-			t.Errorf("unexpected nil value for %s", tt.key)
+	for idx, tt := range repoTests {
+		repo := cm.Repos[idx]
+		if repo.Config.Remote != tt.remote {
+			t.Errorf("wanted: %s, got: %s", tt.remote, repo.Config.Remote)
 		}
-
-		if repo.Remote != tt.remote {
-			t.Errorf("wanted: %s, got: %s", tt.remote, repo.Remote)
+		if repo.Config.Path != tt.path {
+			t.Errorf("wanted: %s, got: %s", tt.path, repo.Config.Path)
 		}
-		if repo.Path != tt.path {
-			t.Errorf("wanted: %s, got: %s", tt.path, repo.Path)
+		if repo.Config.Refs != tt.main_stream {
+			t.Errorf("wanted: %s, got: %s", tt.main_stream, repo.Config.Refs)
 		}
-		if repo.Refs != tt.main_stream {
-			t.Errorf("wanted: %s, got: %s", tt.main_stream, repo.Refs)
-		}
-		if repo.ExcludeTag != tt.exclude {
-			t.Errorf("wanted: %t, got: %t", tt.exclude, repo.ExcludeTag)
+		if repo.Config.ExcludeTag != tt.exclude {
+			t.Errorf("wanted: %t, got: %t", tt.exclude, repo.Config.ExcludeTag)
 		}
 	}
 }

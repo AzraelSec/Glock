@@ -105,7 +105,7 @@ func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 		Use:   "update",
 		Short: "Updates your repositories",
 		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.GetRepos()
+			repos := cm.Repos
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer stop()
 

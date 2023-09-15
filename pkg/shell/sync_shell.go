@@ -2,7 +2,9 @@ package shell
 
 import (
 	"context"
+	"fmt"
 	"io"
+	"os"
 	"os/exec"
 )
 
@@ -17,7 +19,7 @@ type syncShell struct {
 type ShellOps struct {
 	ShellPath string
 	ExecPath  string
-	Env       []string
+	Env       map[string]string
 	Cmd       string
 	Ctx       context.Context
 }
@@ -41,13 +43,17 @@ func NewSyncShell(ops ShellOps) *syncShell {
 		process.Dir = ops.ExecPath
 	}
 	if len(ops.Env) != 0 {
-		process.Env = ops.Env
+		vars := os.Environ()
+		for key, val := range ops.Env {
+			vars = append(vars, fmt.Sprintf("%s=%s", key, val))
+		}
+		process.Env = vars
 	}
 
 	return &syncShell{
 		ctx:     &ops.Ctx,
 		process: process,
-		Pid: -1,
+		Pid:     -1,
 	}
 }
 
@@ -62,5 +68,5 @@ func (ss *syncShell) Start(w io.Writer) (int, error) {
 	}
 	ss.Pid = ss.process.Process.Pid
 	error = ss.process.Wait()
-	return ss.process.ProcessState.ExitCode(), error
+	return ss.process.ProcessState.ExitCode(), IgnoreInterrupt(error)
 }
