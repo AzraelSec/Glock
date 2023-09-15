@@ -160,11 +160,9 @@ func startFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 				}
 			}
 
-			onServiceStopCtx, cancel := context.WithTimeout(context.Background(), time.Minute*10)
-			defer cancel()
 			stopServiceArgs := make([]startServicePayload, 0, len(disposableService))
 			stopServiceFn := func(payload startServicePayload) (startOutputPayload, error) {
-				return serviceRun(onServiceStopCtx, g, path.Dir(cm.ConfigPath), cm.EnvFilenames, payload)
+				return serviceRun(nil, g, path.Dir(cm.ConfigPath), cm.EnvFilenames, payload)
 			}
 			for _, srv := range disposableService {
 				stopServiceArgs = append(stopServiceArgs, startServicePayload{tag: srv.Tag, cmd: srv.Dispose})
