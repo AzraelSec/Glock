@@ -23,4 +23,5 @@ type Git interface {
 	DiffersFromRemote(repo Repo) (bool, error)
 	Switch(repo Repo, branch BranchName, force bool) error
 	Pull(repo Repo, rebase bool) error
+	ListBranches(repo Repo) ([]BranchName, error)
 }

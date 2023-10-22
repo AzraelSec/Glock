@@ -8,7 +8,7 @@ import (
 
 	"github.com/AzraelSec/glock/pkg/dir"
 	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/AzraelSec/glock/pkg/git_command_builder"
+	gitcb "github.com/AzraelSec/glock/pkg/git_command_builder"
 )
 
 type ExternalGit struct{}
@@ -150,4 +150,24 @@ func (eg ExternalGit) Pull(repo git.Repo, rebase bool) error {
 		Arg("pull").
 		ArgIf(rebase, "--rebase").
 		Run()
+}
+
+func (eg ExternalGit) ListBranches(repo git.Repo) ([]git.BranchName, error) {
+	brs := make([]git.BranchName, 0)
+	if !dir.DirExists(repo.Path) {
+		return brs, errors.New("unable to locate repo")
+	}
+
+	out, err := gitcb.NewCommandBuilder().
+		SetRepo(repo).
+		Arg("branch", "--format=%(refname:short)").
+		RunWithOutput()
+	if err != nil {
+		return brs, err
+	}
+
+	for _, br := range strings.Split(out, "\n") {
+		brs = append(brs, git.BranchName(br))
+	}
+	return brs, nil
 }
