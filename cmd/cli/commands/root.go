@@ -10,6 +10,7 @@ import (
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/pkg/external_git"
 	"github.com/AzraelSec/glock/pkg/serializer"
+	"github.com/AzraelSec/glock/cmd/cli/commands/start"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -43,7 +44,7 @@ func ExecuteRoot() {
 
 	rootCmd.AddCommand(
 		initFactory(cm, gm),
-		startFactory(cm, gm),
+		start.StartFactory(cm),
 		statusFactory(cm, gm),
 		updateFactory(cm, gm),
 		switchcmd.New(cm, gm).Command(),
