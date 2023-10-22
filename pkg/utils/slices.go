@@ -11,3 +11,11 @@ func Uniq[T comparable](list []T) []T {
 	}
 	return res
 }
+
+func Map[T, R any](list []T, handler func(i T) R) []R {
+	res := make([]R, len(list))
+	for idx, item := range list {
+		res[idx] = handler(item)
+	}
+	return res
+}
