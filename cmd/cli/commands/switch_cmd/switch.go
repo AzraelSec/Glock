@@ -90,7 +90,7 @@ func printResults(repos []config.LiveRepo, results []runner.Result[struct{}]) {
 	}
 
 	switchedTable := table.New().
-		Border(lipgloss.NormalBorder()).
+		Border(lipgloss.RoundedBorder()).
 		Headers(headers...).
 		BorderStyle(re.NewStyle().Foreground(lipgloss.Color("238"))).
 		Rows(switchedData...).
