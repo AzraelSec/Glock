@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 
+	"github.com/AzraelSec/glock/cmd/cli/commands/status"
 	"github.com/AzraelSec/glock/cmd/cli/commands/switch_cmd"
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/pkg/external_git"
@@ -44,7 +45,7 @@ func ExecuteRoot() {
 	rootCmd.AddCommand(
 		initFactory(cm, gm),
 		startFactory(cm, gm),
-		statusFactory(cm, gm),
+		status.NewStatus(cm, gm).Command(),
 		updateFactory(cm, gm),
 		switchcmd.New(cm, gm).Command(),
 		resetFactory(cm, gm),
