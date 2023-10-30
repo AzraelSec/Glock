@@ -18,7 +18,7 @@ func (gomodUpdater) Tag() string {
 
 func (gomodUpdater) Update(ctx context.Context, w io.Writer, path string) error {
 	_, err := shell.NewSyncShell(shell.ShellOps{
-		Cmd:      "go mod tidy",
+		Cmd:      "go get",
 		ExecPath: path,
 		Ctx:      ctx,
 	}).Start(w)
