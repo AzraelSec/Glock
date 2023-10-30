@@ -100,7 +100,7 @@ func (t *tui) run(force bool) {
 		return
 	}
 
-	printRichResults(t.repos, tm.results)
+	printResults(t.repos, tm.results)
 }
 
 const (

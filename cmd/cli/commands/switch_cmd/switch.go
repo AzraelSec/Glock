@@ -60,7 +60,7 @@ func (sg *switchGit) performSwitch(branch string, force bool) []runner.Result[st
 	return runner.Run(switchFn, switchArgs)
 }
 
-func printRichResults(repos []config.LiveRepo, results []runner.Result[struct{}]) {
+func printResults(repos []config.LiveRepo, results []runner.Result[struct{}]) {
 	re := lipgloss.NewRenderer(os.Stdout)
 	baseStyle := re.NewStyle().
 		Padding(0, 1)
