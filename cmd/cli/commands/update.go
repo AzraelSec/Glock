@@ -7,6 +7,7 @@ import (
 	"os/signal"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/log"
 	"github.com/AzraelSec/glock/internal/runner"
 	"github.com/AzraelSec/glock/pkg/dir"
@@ -97,19 +98,27 @@ func updaterListStart(ctx context.Context, g git.Git, payload updateInputPayload
 	return res, nil
 }
 
-func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
+func updateFactory(dm *dependency.DependencyManager) *cobra.Command {
 	var list *bool
 	var output *bool
 
 	cmd := &cobra.Command{
 		Use:   "update",
 		Short: "Updates your repositories",
-		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.Repos
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, err := dm.GetGit()
+			if err != nil {
+				return err
+			}
+			cm, err := dm.GetConfigManager()
+			if err != nil {
+				return err
+			}
+
 			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 			defer stop()
 
-			updateArgs := make([]updateInputPayload, 0, len(repos))
+			updateArgs := make([]updateInputPayload, 0, len(cm.Repos))
 			updateFn := func(args updateInputPayload) (updateOutputPayload, error) {
 				if *list {
 					return updaterListStart(ctx, g, args)
@@ -122,7 +131,7 @@ func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 				return updateStart(ctx, g, out, args)
 			}
 
-			for _, repo := range repos {
+			for _, repo := range cm.Repos {
 				updateArgs = append(updateArgs, updateInputPayload{
 					UpdaterTag: repo.Config.Updater,
 					RepoPath:   repo.GitConfig.Path,
@@ -132,7 +141,7 @@ func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 			results := runner.Run(updateFn, updateArgs)
 
 			for i, res := range results {
-				logger := log.NewRepoLogger(os.Stdout, repos[i].Name)
+				logger := log.NewRepoLogger(os.Stdout, cm.Repos[i].Name)
 
 				if *list {
 					if res.Error != nil {
@@ -164,6 +173,8 @@ func updateFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 					logger.Success("updated 👌")
 				}
 			}
+
+			return nil
 		},
 	}
 

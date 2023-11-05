@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/signal"
 	"path"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/log"
 	"github.com/AzraelSec/glock/internal/runner"
 	"github.com/AzraelSec/glock/pkg/dir"
@@ -90,13 +92,23 @@ func repoRun(ctx context.Context, g git.Git, envFilenames []string, payload star
 	return res, nil
 }
 
-func startFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
+func startFactory(dm *dependency.DependencyManager) *cobra.Command {
 	var filteredRepos *[]string
 
 	cmd := &cobra.Command{
 		Use:   "start",
 		Short: "Start the development stack 🚀",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, err := dm.GetGit()
+			if err != nil {
+				return err
+			}
+
+			cm, err := dm.GetConfigManager()
+			if err != nil {
+				return err
+			}
+
 			repos := []config.LiveRepo{}
 			if filteredRepos == nil || len(*filteredRepos) == 0 {
 				repos = cm.Repos
@@ -109,8 +121,7 @@ func startFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 			}
 
 			if len(repos) == 0 {
-				color.Red("You cannot start your stack with no repos selected")
-				return
+				return errors.New("You cannot start your stack with no repos selected")
 			}
 
 			executableRepo := []config.LiveRepo{}
@@ -207,6 +218,7 @@ func startFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 			wg.Wait()
 
 			color.Green("Execution completed")
+			return nil
 		},
 	}
 

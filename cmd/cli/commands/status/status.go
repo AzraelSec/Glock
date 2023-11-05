@@ -2,6 +2,7 @@ package status
 
 import (
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/runner"
 	"github.com/AzraelSec/glock/pkg/dir"
 	"github.com/AzraelSec/glock/pkg/git"
@@ -15,8 +16,9 @@ type statusOutputPayload struct {
 }
 
 type status struct {
-	cm *config.ConfigManager
-	g  git.Git
+	cm  *config.ConfigManager
+	g   git.Git
+	err error
 }
 
 func (s *status) statusRepo(gr git.Repo) (statusOutputPayload, error) {
@@ -52,17 +54,28 @@ func (s *status) collect() []runner.Result[statusOutputPayload] {
 	return runner.Run(statusFn, statusArgs)
 }
 
-func NewStatus(cm *config.ConfigManager, g git.Git) *status {
-	return &status{cm, g}
+func NewStatus(dm *dependency.DependencyManager) *status {
+	s := &status{}
+	s.g, s.err = dm.GetGit()
+	if s.err != nil {
+		return s
+	}
+	s.cm, s.err = dm.GetConfigManager()
+	return s
 }
 
 func (s *status) Command() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
 		Short: "Retrieves the current branch on each repo",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if s.err != nil {
+				return s.err
+			}
+
 			// todo: add CLI version
 			s.runTui()
+			return nil
 		},
 	}
 }

@@ -1,15 +1,16 @@
 package commands
 
 import (
+	"errors"
 	"os"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/log"
 	"github.com/AzraelSec/glock/internal/routine"
 	"github.com/AzraelSec/glock/internal/runner"
 	"github.com/AzraelSec/glock/pkg/dir"
 	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -41,20 +42,26 @@ func resetRepo(g git.Git, payload resetInputPayload) error {
 	return g.Pull(payload.gitRepo, false)
 }
 
-func resetFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
+func resetFactory(dm *dependency.DependencyManager) *cobra.Command {
 	var skipPull *bool
 	cmd := &cobra.Command{
 		Use:   "reset",
 		Short: "Reset the branch to its original base branch and pull changes from remote",
-		Run: func(cmd *cobra.Command, args []string) {
-			repos := cm.Repos
-
-			if !routine.AllClean(repos, g) {
-				color.Red("Some of the repositories are not clean - it's not safe to switch")
-				return
+		RunE: func(cmd *cobra.Command, args []string) error {
+			g, err := dm.GetGit()
+			if err != nil {
+				return err
+			}
+			cm, err := dm.GetConfigManager()
+			if err != nil {
+				return err
 			}
 
-			resetArgs := make([]git.Repo, 0, len(repos))
+			if !routine.AllClean(cm.Repos, g) {
+				return errors.New("Some of the repositories are not clean - it's not safe to switch")
+			}
+
+			resetArgs := make([]git.Repo, 0, len(cm.Repos))
 			resetFn := func(r git.Repo) (struct{}, error) {
 				return struct{}{}, resetRepo(g, resetInputPayload{
 					skipPull: *skipPull,
@@ -62,20 +69,22 @@ func resetFactory(cm *config.ConfigManager, g git.Git) *cobra.Command {
 				})
 			}
 
-			for _, repo := range repos {
+			for _, repo := range cm.Repos {
 				resetArgs = append(resetArgs, repo.GitConfig)
 			}
 
 			results := runner.Run(resetFn, resetArgs)
 
 			for i, res := range results {
-				logger := log.NewRepoLogger(os.Stdout, repos[i].Name)
+				logger := log.NewRepoLogger(os.Stdout, cm.Repos[i].Name)
 				if res.Error != nil {
 					logger.Error(res.Error.Error())
 				} else {
 					logger.Success("Came back home 🏠")
 				}
 			}
+
+			return nil
 		},
 	}
 
