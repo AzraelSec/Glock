@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/routine"
 	"github.com/AzraelSec/glock/internal/runner"
 	"github.com/AzraelSec/glock/pkg/dir"
@@ -105,12 +106,19 @@ func printResults(repos []config.LiveRepo, results []runner.Result[struct{}]) {
 }
 
 type switchCmd struct {
-	cm *config.ConfigManager
-	g  git.Git
+	cm  *config.ConfigManager
+	g   git.Git
+	err error
 }
 
-func New(cm *config.ConfigManager, g git.Git) *switchCmd {
-	return &switchCmd{cm, g}
+func New(dm *dependency.DependencyManager) *switchCmd {
+	scmd := &switchCmd{}
+	scmd.g, scmd.err = dm.GetGit()
+	if scmd.err != nil {
+		return scmd
+	}
+	scmd.cm, scmd.err = dm.GetConfigManager()
+	return scmd
 }
 
 func (s *switchCmd) Command() *cobra.Command {

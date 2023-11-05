@@ -16,16 +16,12 @@ type ExternalGit struct{}
 // ensure to implement the Git interface
 var _ git.Git = ExternalGit{}
 
-func checkGitPresence() {
-	_, err := exec.LookPath("git")
-	if err != nil {
-		panic("install git client before running glock")
+func NewExternalGit() (ExternalGit, error) {
+	if _, err := exec.LookPath("git"); err != nil {
+		return ExternalGit{}, errors.New("install git client before running glock")
 	}
-}
-
-func NewExternalGit() ExternalGit {
-	checkGitPresence()
-	return ExternalGit{}
+	// fixme: change the methods to use a pointer to ExternalGit
+	return ExternalGit{}, nil
 }
 
 func (ExternalGit) Clone(ops git.CloneOps) error {
