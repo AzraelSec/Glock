@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/AzraelSec/glock/cmd/cli/commands/init_cmd"
 	"github.com/AzraelSec/glock/cmd/cli/commands/status"
 	switchcmd "github.com/AzraelSec/glock/cmd/cli/commands/switch_cmd"
 	"github.com/AzraelSec/glock/internal/dependency"
@@ -35,6 +36,7 @@ func ExecuteRoot() {
 	dm := dependency.NewDependencyManager(CONFIG_PATH_ENV, CONFIG_FILE_NAME, MAX_CONFIG_FILE_DEPTH)
 
 	rootCmd.AddCommand(
+		init_cmd.New(dm).Command(),
 		startFactory(dm),
 		status.NewStatus(dm).Command(),
 		updateFactory(dm),
