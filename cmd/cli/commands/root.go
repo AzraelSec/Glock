@@ -7,6 +7,7 @@ import (
 	"github.com/AzraelSec/glock/cmd/cli/commands/init_cmd"
 	"github.com/AzraelSec/glock/cmd/cli/commands/status"
 	switchcmd "github.com/AzraelSec/glock/cmd/cli/commands/switch_cmd"
+	"github.com/AzraelSec/glock/cmd/cli/commands/update"
 	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -35,16 +36,14 @@ func (w RedWriter) Write(p []byte) (n int, err error) {
 func ExecuteRoot() {
 	dm := dependency.NewDependencyManager(CONFIG_PATH_ENV, CONFIG_FILE_NAME, MAX_CONFIG_FILE_DEPTH)
 
+	rootCmd.SetErr(RedWriter{os.Stderr})
 	rootCmd.AddCommand(
-		init_cmd.New(dm).Command(),
 		startFactory(dm),
+		init_cmd.New(dm).Command(),
 		status.NewStatus(dm).Command(),
-		updateFactory(dm),
+		update.NewUpdate(dm).Command(),
 		switchcmd.New(dm).Command(),
 		resetFactory(dm),
 	)
-
-	rootCmd.SetErr(RedWriter{os.Stderr})
-
 	rootCmd.Execute()
 }
