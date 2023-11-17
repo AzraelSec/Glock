@@ -8,7 +8,7 @@ import (
 	"github.com/AzraelSec/glock/pkg/dir"
 )
 
-const IGNORE_TAG = "ignore"
+const ignoreTag = "_ignore_"
 
 var NoUpdaterErr = errors.New("no matching updater found")
 
@@ -37,12 +37,13 @@ func Infer(d dir.Directory) (Updater, error) {
 
 func MatchByTag(tag string) (Updater, error) {
 	for _, updater := range updaters {
-		if tag == IGNORE_TAG {
-			continue
-		}
 		if updater.Tag() == tag {
 			return updater, nil
 		}
 	}
 	return nil, NoUpdaterErr
+}
+
+func IsIgnoreTag(tag string) bool {
+	return tag == ignoreTag
 }
