@@ -2,7 +2,9 @@
 
 > Shooting flies with a bazooka
 
-<!-- ![Glock Logo](glock_logo.png) -->
+<p align="center">
+   <img alt="Glock Logo" src="/assets/logo.png" width="250">
+</p>
 
 ## Introduction
 
@@ -54,9 +56,9 @@ To get started with Glock, follow these simple steps:
 
    This will display a list of available commands and provide you with everything you need to manage your multi-repository projects effectively.
 
-## Documentation
-
-Glock's extensive documentation will guide you through its various features and provide in-depth explanations of its commands. To access the documentation, visit the [Glock Wiki](https://github.com/your-username/glock/wiki). Here you will find detailed usage examples, best practices, and tips to optimize your workflow.
+<p align="center">
+   <img alt="help preview" src="/assets/help.png" width="600">
+</P
 
 ## License
 
