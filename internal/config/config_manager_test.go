@@ -7,7 +7,6 @@ import (
 )
 
 const completeConfigYamlSrc = `
-open_command: open
 root_path: /tmp/
 root_main_stream: master
 env_filenames:
@@ -31,7 +30,6 @@ repos:
 `
 
 const completeConfigJsonSrc = `{
-	"open_command": "open",
 	"root_path": "/tmp/",
 	"root_main_stream": "master",
 	"env_filenames": [

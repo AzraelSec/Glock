@@ -3,7 +3,6 @@ package config
 import "errors"
 
 type Global struct {
-	OpenCommand  string   `yaml:"open_command" json:"open_command,omitempty"`
 	RootPath     string   `yaml:"root_path" json:"root_path,omitempty"`
 	RootRefs     string   `yaml:"root_main_stream" json:"root_main_stream"`
 	EnvFilenames []string `yaml:"env_filenames" json:"env_filenames"`
