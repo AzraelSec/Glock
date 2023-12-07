@@ -13,7 +13,6 @@ import (
 	"github.com/AzraelSec/glock/pkg/git"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
-	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -127,10 +126,13 @@ func (s *switchCmd) Command() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "switch",
 		Short: "Changes the branch to the given one - for all the repos that has it",
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if s.err != nil {
+				return s.err
+			}
+
 			if !*force && !routine.AllClean(s.cm.Repos, s.g) {
-				color.Red("Some of the repositories are not clean - it's not safe to switch")
-				return
+				return errors.New("Some of the repositories are not clean - it's not safe to switch")
 			}
 
 			sg := &switchGit{
@@ -143,6 +145,8 @@ func (s *switchCmd) Command() *cobra.Command {
 			} else {
 				newTui(sg).run(*force)
 			}
+
+			return nil
 		},
 	}
 
