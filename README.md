@@ -58,7 +58,7 @@ To get started with Glock, follow these simple steps:
 
 <p align="center">
    <img alt="help preview" src="/assets/help.png" width="600">
-</P
+</p>
 
 ## License
 
