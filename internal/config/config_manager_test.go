@@ -9,6 +9,7 @@ import (
 const completeConfigYamlSrc = `
 root_path: /tmp/
 root_main_stream: master
+tag_template: v{.Now.Format("02-01-06.150405")}
 env_filenames:
   - ".env.defaults"
   - ".env.something"

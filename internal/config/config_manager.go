@@ -13,6 +13,7 @@ var RepoNotFoundErr = errors.New("repo not found")
 type ConfigManager struct {
 	Repos        []LiveRepo
 	ConfigPath   string
+	TagPattern   string
 	Services     []Services
 	EnvFilenames []string
 }
@@ -63,6 +64,7 @@ func NewConfigManager(configPath string, src []byte, d serializer.Serializer) (*
 		Repos:        repos,
 		Services:     dataSource.Services,
 		EnvFilenames: envFilenames,
+		TagPattern:   dataSource.TagPattern,
 	}, dataSource.Validate()
 }
 

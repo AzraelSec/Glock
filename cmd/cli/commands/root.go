@@ -7,6 +7,7 @@ import (
 	"github.com/AzraelSec/glock/cmd/cli/commands/init_cmd"
 	"github.com/AzraelSec/glock/cmd/cli/commands/status"
 	switchcmd "github.com/AzraelSec/glock/cmd/cli/commands/switch_cmd"
+	"github.com/AzraelSec/glock/cmd/cli/commands/tag"
 	"github.com/AzraelSec/glock/cmd/cli/commands/update"
 	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/fatih/color"
@@ -44,6 +45,7 @@ func ExecuteRoot() {
 		update.NewUpdate(dm).Command(),
 		switchcmd.New(dm).Command(),
 		resetFactory(dm),
+		tag.New(dm).Command(),
 	)
 	rootCmd.Execute()
 }

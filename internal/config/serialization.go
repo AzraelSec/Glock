@@ -6,6 +6,7 @@ type Global struct {
 	RootPath     string   `yaml:"root_path" json:"root_path,omitempty"`
 	RootRefs     string   `yaml:"root_main_stream" json:"root_main_stream"`
 	EnvFilenames []string `yaml:"env_filenames" json:"env_filenames"`
+	TagPattern   string   `yaml:"tag_pattern" json:"tag_pattern"`
 }
 
 type ConfigRepo struct {
