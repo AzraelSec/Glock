@@ -11,8 +11,8 @@ func (TestExecutor) Output() ([]byte, error, int) {
 	return []byte{}, nil, 1
 }
 
-func NewTestCommandBuilder() *commandBuilder {
-	return &commandBuilder{
+func NewTestCommandBuilder() *CommandBuilder {
+	return &CommandBuilder{
 		exec: func(e string, args ...string) executor {
 			return TestExecutor{}
 		},

@@ -12,7 +12,7 @@ type executor interface {
 	Output() ([]byte, error, int)
 }
 
-type commandBuilder struct {
+type CommandBuilder struct {
 	exec       func(e string, args ...string) executor
 	repo       *git.Repo
 	entryPoint string
@@ -32,8 +32,8 @@ func (e *commandBuilderExecutor) ExitCode() int {
 	return e.Cmd.ProcessState.ExitCode()
 }
 
-func NewCommandBuilder() *commandBuilder {
-	return &commandBuilder{
+func NewCommandBuilder() *CommandBuilder {
+	return &CommandBuilder{
 		entryPoint: "git", // todo: change this to dynamic
 		args:       []string{},
 		exec: func(e string, args ...string) executor {
@@ -43,26 +43,26 @@ func NewCommandBuilder() *commandBuilder {
 	}
 }
 
-func (cb *commandBuilder) SetRepo(r git.Repo) *commandBuilder {
+func (cb *CommandBuilder) SetRepo(r git.Repo) *CommandBuilder {
 	if cb.repo == nil {
 		cb.repo = &r
 	}
 	return cb
 }
 
-func (cb *commandBuilder) Arg(args ...string) *commandBuilder {
+func (cb *CommandBuilder) Arg(args ...string) *CommandBuilder {
 	cb.args = append(cb.args, args...)
 	return cb
 }
 
-func (cb *commandBuilder) ArgIf(cond bool, args ...string) *commandBuilder {
+func (cb *CommandBuilder) ArgIf(cond bool, args ...string) *CommandBuilder {
 	if cond {
 		cb.args = append(cb.args, args...)
 	}
 	return cb
 }
 
-func (cb *commandBuilder) buildCommand() (string, []string) {
+func (cb *CommandBuilder) buildCommand() (string, []string) {
 	args := []string{}
 	if cb.repo != nil {
 		args = append(args, "--git-dir", fmt.Sprintf("%s/.git", cb.repo.Path))
@@ -72,7 +72,7 @@ func (cb *commandBuilder) buildCommand() (string, []string) {
 	return cb.entryPoint, args
 }
 
-func (cb *commandBuilder) RunWithOutput() (string, error) {
+func (cb *CommandBuilder) RunWithOutput() (string, error) {
 	ep, args := cb.buildCommand()
 
 	bo, err, _ := cb.exec(ep, args...).Output()
@@ -84,18 +84,18 @@ func (cb *commandBuilder) RunWithOutput() (string, error) {
 	return op, nil
 }
 
-func (cb *commandBuilder) RunWithExitCode() int {
+func (cb *CommandBuilder) RunWithExitCode() int {
 	ep, args := cb.buildCommand()
 	_, _, ec := cb.exec(ep, args...).Output()
 	return ec
 }
 
-func (cb *commandBuilder) Run() error {
+func (cb *CommandBuilder) Run() error {
 	_, err := cb.RunWithOutput()
 	return err
 }
 
-func (cb *commandBuilder) String() string {
+func (cb *CommandBuilder) String() string {
 	ep, arg := cb.buildCommand()
 	return fmt.Sprintf("%s %s", ep, strings.Join(arg, " "))
 }
