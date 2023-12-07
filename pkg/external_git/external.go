@@ -30,6 +30,17 @@ func (ExternalGit) Clone(ops git.CloneOps) error {
 	return newClone(ops).Run()
 }
 
+func (ExternalGit) ListRemotes(repo git.Repo) ([]git.Remote, error) {
+	remotes := make([]git.Remote, 0)
+	out, err := newListRemotes(repo).RunWithOutput()
+	if err != nil {
+		return remotes, err
+	}
+
+	for _, remote := range strings.Split(out, "\n") {
+		remotes = append(remotes, git.Remote(remote))
+	}
+	return remotes, nil
 }
 
 func (ExternalGit) Fetch(repo git.Repo) error {
@@ -143,4 +154,18 @@ func (eg ExternalGit) ListBranches(repo git.Repo) ([]git.BranchName, error) {
 		brs = append(brs, git.BranchName(br))
 	}
 	return brs, nil
+}
+
+func (eg ExternalGit) CreateLightweightTag(repo git.Repo, tag string, branch git.BranchName) error {
+	if !dir.DirExists(repo.Path) {
+		return errors.New("unable to locate repo")
+	}
+	return newCreateLightWeightTag(repo, tag, branch).Run()
+}
+
+func (eg ExternalGit) PushTag(repo git.Repo, tag git.Tag, remote git.Remote) error {
+	if !dir.DirExists(repo.Path) {
+		return errors.New("unable to locate repo")
+	}
+	return newPushTag(repo, tag, remote).Run()
 }
