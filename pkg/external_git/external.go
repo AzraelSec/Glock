@@ -8,7 +8,6 @@ import (
 
 	"github.com/AzraelSec/glock/pkg/dir"
 	"github.com/AzraelSec/glock/pkg/git"
-	gitcb "github.com/AzraelSec/glock/pkg/git_command_builder"
 )
 
 type ExternalGit struct{}
@@ -28,20 +27,13 @@ func (ExternalGit) Clone(ops git.CloneOps) error {
 	if dir.DirExists(ops.Path) {
 		return fmt.Errorf("repo already cloned at %s", ops.Path)
 	}
+	return newClone(ops).Run()
+}
 
-	return gitcb.NewCommandBuilder().
-		Arg("clone").
-		Arg(string(ops.Remote)).
-		Arg(ops.Path).
-		Arg("--branch", string(ops.Refs)).
-		Run()
 }
 
 func (ExternalGit) Fetch(repo git.Repo) error {
-	return gitcb.NewCommandBuilder().
-		SetRepo(repo).
-		Arg("fetch").
-		Run()
+	return newFetch(repo).Run()
 }
 
 func (ExternalGit) CurrentBranch(repo git.Repo) (git.BranchName, error) {
@@ -49,10 +41,7 @@ func (ExternalGit) CurrentBranch(repo git.Repo) (git.BranchName, error) {
 		return "", errors.New("unable to locate repo")
 	}
 
-	br, err := gitcb.NewCommandBuilder().
-		SetRepo(repo).
-		Arg("rev-parse", "--abbrev-ref", "HEAD").
-		RunWithOutput()
+	br, err := newCurrentBranch(repo).RunWithOutput()
 	return git.BranchName(br), err
 }
 
@@ -82,10 +71,7 @@ func (ExternalGit) HasChanges(repo git.Repo) (bool, error) {
 		return false, errors.New("unable to locate repo")
 	}
 
-	changes, err := gitcb.NewCommandBuilder().
-		SetRepo(repo).
-		Arg("status", "--porcelain").
-		RunWithOutput()
+	changes, err := newHasChanges(repo).RunWithOutput()
 	if err != nil {
 		return false, err
 	}
@@ -103,11 +89,7 @@ func (g ExternalGit) DiffersFromRemote(repo git.Repo) (bool, error) {
 		return false, err
 	}
 
-	ret := gitcb.NewCommandBuilder().
-		SetRepo(repo).
-		Arg("diff", "--exit-code", "--quiet").
-		Arg(string(br), "@{upstream}").
-		RunWithExitCode()
+	ret := newDiffersFromRemote(repo, br).RunWithExitCode()
 	if ret == -1 {
 		return false, errors.New("returned with -1")
 	}
@@ -115,17 +97,12 @@ func (g ExternalGit) DiffersFromRemote(repo git.Repo) (bool, error) {
 	return ret == 1, nil
 }
 
-func (eg ExternalGit) Switch(repo git.Repo, branch git.BranchName, force bool) error {
+func (eg ExternalGit) Switch(repo git.Repo, br git.BranchName, force bool) error {
 	if !dir.DirExists(repo.Path) {
 		return errors.New("unable to locate repo")
 	}
 
-	err := gitcb.NewCommandBuilder().
-		SetRepo(repo).
-		Arg("switch", string(branch)).
-		ArgIf(force, "-f").
-		Run()
-
+	err := newSwitch(repo, br, force).Run()
 	if err != nil {
 		ee, ok := err.(*exec.ExitError)
 		if ok && strings.Contains(string(ee.Stderr), "invalid reference") {
@@ -140,12 +117,15 @@ func (eg ExternalGit) Pull(repo git.Repo, rebase bool) error {
 	if !dir.DirExists(repo.Path) {
 		return errors.New("unable to locate repo")
 	}
+	return newPull(repo, rebase).Run()
+}
 
-	return gitcb.NewCommandBuilder().
-		SetRepo(repo).
-		Arg("pull").
-		ArgIf(rebase, "--rebase").
-		Run()
+func (eg ExternalGit) PullBranch(repo git.Repo, branch git.BranchName, rebase bool) error {
+	if !dir.DirExists(repo.Path) {
+		return errors.New("unable to locate repo")
+	}
+
+	return newPullBranch(repo, branch, "origin", rebase).Run()
 }
 
 func (eg ExternalGit) ListBranches(repo git.Repo) ([]git.BranchName, error) {
@@ -154,10 +134,7 @@ func (eg ExternalGit) ListBranches(repo git.Repo) ([]git.BranchName, error) {
 		return brs, errors.New("unable to locate repo")
 	}
 
-	out, err := gitcb.NewCommandBuilder().
-		SetRepo(repo).
-		Arg("branch", "--format=%(refname:short)").
-		RunWithOutput()
+	out, err := newListBranches(repo).RunWithOutput()
 	if err != nil {
 		return brs, err
 	}
