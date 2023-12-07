@@ -27,7 +27,7 @@ func newCli(repos []config.LiveRepo, output bool) *cli {
 	ctx, cancelCtx := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 
 	updateFn, updateArgs := runnerArgs(ctx, repos, output)
-	return &cli{ctx, cancelCtx,  repos, updateFn, updateArgs, output}
+	return &cli{ctx, cancelCtx, repos, updateFn, updateArgs, output}
 }
 
 func (c *cli) run() {

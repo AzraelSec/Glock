@@ -46,16 +46,17 @@ func (t *tui) initModel() *model {
 	}
 }
 
-func (t *tui) run() {
+func (t *tui) run() error {
 	m, err := tea.NewProgram(t.initModel()).Run()
 	if err != nil {
-		panic(err)
+		return err
 	}
 
 	tm := m.(*model)
 	if tm.status == ABORTED {
 		fmt.Println(ui.RED.Render("Update aborted!"))
 	}
+	return nil
 }
 
 type task struct {

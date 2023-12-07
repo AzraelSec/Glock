@@ -124,7 +124,7 @@ func (u *update) Command() *cobra.Command {
 			if *disableTui {
 				newCli(u.cm.Repos, *output).run()
 			} else {
-				newTui(u.cm.Repos).run()
+				return newTui(u.cm.Repos).run()
 			}
 
 			return nil
@@ -132,7 +132,7 @@ func (u *update) Command() *cobra.Command {
 	}
 
 	output = cmd.Flags().BoolP("output", "o", false, "Print the updaters output on stdout (mostly debugging purposes)")
-	disableTui = cmd.Flags().BoolP("disableTui", "c", false, "Disable TUI")
+	disableTui = cmd.Flags().Bool("disableTui", false, "Disable TUI")
 
 	return cmd
 }
