@@ -12,6 +12,13 @@ Welcome to Glock, the ultimate tool for managing your multi-repository projects 
 
 Glock is a powerful open-source project developed in Go, designed to assist teams in managing the development of their multi-repository projects. It offers a range of handy commands that streamline versioning, stack execution, and other useful operations. With Glock, you can bid farewell to those tedious manual tasks and embrace a smoother, more efficient workflow.
 
+> [!WARNING]
+> Please keep in mind that Glock is still under active development
+> and therefore backward compatibility is not guaranteed and breaking changes are expected.
+
+> [!NOTE]
+> There is still no documentation on Glock configuration. It'll be produced and published as soon as possible.
+
 ## Key Features
 
 - **Effortless Versioning:** Glock makes version management a breeze, allowing you to easily handle multiple repositories and their associated versions. Say goodbye to versioning conflicts and hello to seamless collaboration.
