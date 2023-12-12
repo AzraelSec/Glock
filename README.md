@@ -5,6 +5,12 @@
 <p align="center">
    <img alt="Glock Logo" src="/assets/logo.png" width="250">
 </p>
+<p align="center">
+    <a href="https://github.com/AzraelSec/Glock/releases"><img src="https://img.shields.io/github/release/AzraelSec/Glock.svg" alt="Latest Release"></a>
+    <!-- <a href="https://pkg.go.dev/github.com/AzraelSec/Glock?tab=doc"><img src="https://godoc.org/github.com/golang/gddo?status.svg" alt="GoDoc"></a> -->
+    <a href="https://github.com/AzraelSec/Glock/actions"><img src="https://github.com/AzraelSec/Glock/actions/workflows/ci.yml/badge.svg" alt="Build Status"></a>
+    <a href="https://coveralls.io/github/AzraelSec/Glock?branch=main"><img src="https://coveralls.io/repos/github/AzraelSec/Glock/badge.svg?branch=main" alt="Coverage Status" /></a>
+</p>
 
 ## Introduction
 
