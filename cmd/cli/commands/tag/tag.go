@@ -158,12 +158,11 @@ func (t *tagCmd) Command() *cobra.Command {
 				return nil
 			}
 
-			if *disableTui {
-				newCli(t.g, repos, t.cm.TagPattern, *useCurrent, *skipPush, *pullBefore).run()
-			} else {
-				return newTui(t.g, repos, t.cm.TagPattern, *useCurrent, *skipPush, *pullBefore).run()
+			isYeet := cmd.CalledAs() == "yeet"
+			if !*disableTui {
+				return newTui(t.g, repos, t.cm.TagPattern, *useCurrent, *skipPush, *pullBefore, isYeet).run()
 			}
-
+			newCli(t.g, repos, t.cm.TagPattern, *useCurrent, *skipPush, *pullBefore, isYeet).run()
 			return nil
 		},
 	}

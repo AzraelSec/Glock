@@ -14,15 +14,19 @@ type cli struct {
 	repos   []config.LiveRepo
 	tagFn   tagRunnerFunc
 	tagArgs []tagInputPayload
+  isYeet bool
 }
 
-func newCli(g git.Git, repos []config.LiveRepo, tagPattern string, useCurrent, skipPush, pullBefore bool) *cli {
+func newCli(g git.Git, repos []config.LiveRepo, tagPattern string, useCurrent, skipPush, pullBefore, isYeet bool) *cli {
 	tagFn, tagArgs := runnerArgs(g, repos, tagPattern, useCurrent, skipPush, pullBefore)
-	return &cli{repos, tagFn, tagArgs}
+	return &cli{repos, tagFn, tagArgs, isYeet}
 }
 
 func (c *cli) run() {
 	var out bytes.Buffer
+  if c.isYeet {
+    out.WriteString(YEET_ASCII_IMAGE)
+  }
 	res := runner.Run(c.tagFn, c.tagArgs)
 
 	for idx, r := range res {

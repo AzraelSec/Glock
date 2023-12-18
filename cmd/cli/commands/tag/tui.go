@@ -15,11 +15,12 @@ type tui struct {
 	repos   []config.LiveRepo
 	tagFn   tagRunnerFunc
 	tagArgs []tagInputPayload
+	isYeet  bool
 }
 
-func newTui(g git.Git, repos []config.LiveRepo, tagPattern string, useCurrent, skipPush, pullBefore bool) *tui {
+func newTui(g git.Git, repos []config.LiveRepo, tagPattern string, useCurrent, skipPush, pullBefore, isYeet bool) *tui {
 	tagFn, tagArgs := runnerArgs(g, repos, tagPattern, useCurrent, skipPush, pullBefore)
-	return &tui{repos, tagFn, tagArgs}
+	return &tui{repos, tagFn, tagArgs, isYeet}
 }
 
 func (t *tui) initModel() *model {
@@ -39,6 +40,7 @@ func (t *tui) initModel() *model {
 		tasks:     tasks,
 		completed: make([]int, 0, len(tasks)),
 		spinner:   ui.NewSpinner(),
+		isYeet:    t.isYeet,
 	}
 }
 
@@ -70,6 +72,7 @@ type model struct {
 	completed []int
 
 	spinner spinner.Model
+	isYeet  bool
 }
 
 type tagStartMsg struct{ idx int }
@@ -145,6 +148,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) View() string {
 	var buff bytes.Buffer
+  if m.isYeet {
+    buff.WriteString(YEET_ASCII_IMAGE)
+  }
+
 	for _, task := range m.tasks {
 		buff.WriteString(m.renderTaskRow(task))
 		buff.WriteString("\n")
