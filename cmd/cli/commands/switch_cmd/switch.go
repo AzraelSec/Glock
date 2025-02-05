@@ -29,7 +29,7 @@ type switchInputPayload struct {
 
 func (sg *switchGit) switchRepo(payload switchInputPayload) error {
 	if !dir.DirExists(payload.gitRepo.Path) {
-		return config.RepoNotFoundErr
+		return config.ErrRepoNotFound
 	}
 
 	if err := sg.Fetch(payload.gitRepo); err != nil {
@@ -78,7 +78,7 @@ func printResults(repos []config.LiveRepo, results []runner.Result[struct{}]) {
 			continue
 		}
 
-		if !errors.Is(res.Error, git.InvalidReferenceErr) {
+		if !errors.Is(res.Error, git.ErrInvalidReference) {
 			touched = true
 			switchedData = append(switchedData, []string{repos[idx].Name, results[idx].Error.Error()})
 		}
@@ -132,7 +132,7 @@ func (s *switchCmd) Command() *cobra.Command {
 			}
 
 			if !*force && !routine.AllClean(s.cm.Repos, s.g) {
-				return errors.New("Some of the repositories are not clean - it's not safe to switch")
+				return errors.New("some of the repositories are not clean - it's not safe to switch")
 			}
 
 			sg := &switchGit{

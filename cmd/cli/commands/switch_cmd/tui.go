@@ -28,7 +28,7 @@ func newTui(sg *switchGit) *tui {
 func (t *tui) collectBranches(repo git.Repo) ([]string, error) {
 	brs := make([]string, 0)
 	if !dir.DirExists(repo.Path) {
-		return brs, config.RepoNotFoundErr
+		return brs, config.ErrRepoNotFound
 	}
 
 	res, err := t.ListBranches(repo)
@@ -132,14 +132,17 @@ func (t *model) fetchBranches() tea.Msg {
 	return branchesListDoneMsg(branches)
 }
 
-type switchStartMsg string
-type switchDoneMsg struct{}
+type (
+	switchStartMsg string
+	switchDoneMsg  struct{}
+)
 
 func switchStart(item item) tea.Cmd {
 	return func() tea.Msg {
 		return switchStartMsg(item)
 	}
 }
+
 func (m *model) switchRun(target string) tea.Cmd {
 	return func() tea.Msg {
 		m.results = m.startSwitch(target)

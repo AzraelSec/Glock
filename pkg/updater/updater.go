@@ -10,7 +10,7 @@ import (
 
 const ignoreTag = "_ignore_"
 
-var NoUpdaterErr = errors.New("no matching updater found")
+var ErrNoUpdater = errors.New("no matching updater found")
 
 var updaters = []Updater{
 	yarnUpdater{},
@@ -32,7 +32,7 @@ func Infer(d dir.Directory) (Updater, error) {
 			return updater, nil
 		}
 	}
-	return nil, NoUpdaterErr
+	return nil, ErrNoUpdater
 }
 
 func MatchByTag(tag string) (Updater, error) {
@@ -41,7 +41,7 @@ func MatchByTag(tag string) (Updater, error) {
 			return updater, nil
 		}
 	}
-	return nil, NoUpdaterErr
+	return nil, ErrNoUpdater
 }
 
 func IsIgnoreTag(tag string) bool {

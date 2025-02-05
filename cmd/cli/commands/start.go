@@ -27,7 +27,7 @@ type startServicePayload struct {
 	cmd string
 }
 
-func serviceRun(ctx context.Context, g git.Git, configPath string, envFilenames []string, payload startServicePayload) (startOutputPayload, error) {
+func serviceRun(ctx context.Context, _ git.Git, configPath string, _ []string, payload startServicePayload) (startOutputPayload, error) {
 	res := startOutputPayload{
 		Pid:     -1,
 		RetCode: -1,
@@ -62,14 +62,14 @@ type startOutputPayload struct {
 	RetCode int
 }
 
-func repoRun(ctx context.Context, g git.Git, envFilenames []string, payload startInputPayload) (startOutputPayload, error) {
+func repoRun(ctx context.Context, _ git.Git, envFilenames []string, payload startInputPayload) (startOutputPayload, error) {
 	res := startOutputPayload{
 		Pid:     -1,
 		RetCode: -1,
 	}
 
 	if !dir.DirExists(payload.gitPath) {
-		return res, config.RepoNotFoundErr
+		return res, config.ErrRepoNotFound
 	}
 
 	denv, _ := godotenv.ReadFrom(payload.gitPath, false, envFilenames...)
@@ -121,7 +121,7 @@ func startFactory(dm *dependency.DependencyManager) *cobra.Command {
 			}
 
 			if len(repos) == 0 {
-				return errors.New("You cannot start your stack with no repos selected")
+				return errors.New("you cannot start your stack with no repos selected")
 			}
 
 			executableRepo := []config.LiveRepo{}

@@ -9,7 +9,7 @@ import (
 )
 
 type executor interface {
-	Output() ([]byte, error, int)
+	Output() ([]byte, int, error)
 }
 
 type CommandBuilder struct {
@@ -23,9 +23,9 @@ type commandBuilderExecutor struct {
 	exec.Cmd
 }
 
-func (be commandBuilderExecutor) Output() ([]byte, error, int) {
+func (be commandBuilderExecutor) Output() ([]byte, int, error) {
 	o, e := be.Cmd.Output()
-	return o, e, be.Cmd.ProcessState.ExitCode()
+	return o, be.Cmd.ProcessState.ExitCode(), e
 }
 
 func (e *commandBuilderExecutor) ExitCode() int {
@@ -75,7 +75,7 @@ func (cb *CommandBuilder) buildCommand() (string, []string) {
 func (cb *CommandBuilder) RunWithOutput() (string, error) {
 	ep, args := cb.buildCommand()
 
-	bo, err, _ := cb.exec(ep, args...).Output()
+	bo, _, err := cb.exec(ep, args...).Output()
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +86,7 @@ func (cb *CommandBuilder) RunWithOutput() (string, error) {
 
 func (cb *CommandBuilder) RunWithExitCode() int {
 	ep, args := cb.buildCommand()
-	_, _, ec := cb.exec(ep, args...).Output()
+	_, ec, _ := cb.exec(ep, args...).Output()
 	return ec
 }
 

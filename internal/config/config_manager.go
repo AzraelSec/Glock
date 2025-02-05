@@ -8,7 +8,7 @@ import (
 	"github.com/AzraelSec/glock/pkg/serializer"
 )
 
-var RepoNotFoundErr = errors.New("repo not found")
+var ErrRepoNotFound = errors.New("repo not found")
 
 type ConfigManager struct {
 	Repos        []LiveRepo

@@ -7,9 +7,7 @@ import (
 
 const RemoteGitUrlRegex = "((git|ssh|http(s)?)|(git@[\\w\\.]+))(:(//)?)([\\w\\.@\\:/\\-~]+)(\\.git)(/)?"
 
-var (
-	RemoteGitUrlErr = errors.New("invalid git remote repository url")
-)
+var ErrInvalidGitUrl = errors.New("invalid git remote repository url")
 
 func NewRemoteGitUrl(raw string) (RemoteGitUrl, error) {
 	match, err := regexp.Match(RemoteGitUrlRegex, []byte(raw))
@@ -18,7 +16,7 @@ func NewRemoteGitUrl(raw string) (RemoteGitUrl, error) {
 	}
 
 	if !match {
-		return "", RemoteGitUrlErr
+		return "", ErrInvalidGitUrl
 	}
 
 	return RemoteGitUrl(raw), nil

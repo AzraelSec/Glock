@@ -7,8 +7,8 @@ import (
 
 type TestExecutor struct{}
 
-func (TestExecutor) Output() ([]byte, error, int) {
-	return []byte{}, nil, 1
+func (TestExecutor) Output() ([]byte, int, error) {
+	return []byte{}, 1, nil
 }
 
 func NewTestCommandBuilder() *CommandBuilder {

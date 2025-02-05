@@ -39,7 +39,7 @@ type tagInputPayload struct {
 func createTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
 	res := tagOutputPayload{}
 	if !dir.DirExists(input.gr.Path) {
-		return res, config.RepoNotFoundErr
+		return res, config.ErrRepoNotFound
 	}
 
 	tmpl, err := template.New("tag").Parse(input.pattern)
@@ -142,7 +142,7 @@ func (t *tagCmd) Command() *cobra.Command {
 			}
 
 			if t.cm.TagPattern == "" {
-				return errors.New("You need to define `tag_pattern` in your config to use this command")
+				return errors.New("you need to define `tag_pattern` in your config to use this command")
 			}
 
 			repos := make([]config.LiveRepo, 0)

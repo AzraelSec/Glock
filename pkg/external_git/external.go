@@ -117,7 +117,7 @@ func (eg ExternalGit) Switch(repo git.Repo, br git.BranchName, force bool) error
 	if err != nil {
 		ee, ok := err.(*exec.ExitError)
 		if ok && strings.Contains(string(ee.Stderr), "invalid reference") {
-			err = git.InvalidReferenceErr
+			err = git.ErrInvalidReference
 		}
 	}
 

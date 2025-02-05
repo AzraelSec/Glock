@@ -31,12 +31,12 @@ type Config struct {
 	Global   `yaml:",inline"`
 }
 
-var ConfigValidationErr = errors.New("invalid config")
+var ErrConfigValidation = errors.New("invalid config")
 
 func (c Config) Validate() error {
 	for _, rp := range c.Repos {
 		if rp == nil || rp.Remote == "" {
-			return ConfigValidationErr
+			return ErrConfigValidation
 		}
 	}
 	return nil

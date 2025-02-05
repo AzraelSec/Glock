@@ -10,7 +10,7 @@ import (
 func AllClean(repos []config.LiveRepo, g git.Git) bool {
 	hasChanges := func(repo config.LiveRepo) (bool, error) {
 		if !dir.DirExists(repo.GitConfig.Path) {
-			return false, config.RepoNotFoundErr
+			return false, config.ErrRepoNotFound
 		}
 		return g.HasChanges(repo.GitConfig)
 	}

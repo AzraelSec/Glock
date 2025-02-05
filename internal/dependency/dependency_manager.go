@@ -32,7 +32,7 @@ func (*DependencyManager) GetGit() (git.Git, error) {
 
 func (dm *DependencyManager) ConfigManagerFromFile(dir string) (*config.ConfigManager, error) {
 	if _, err := os.Stat(dir); err != nil {
-		return nil, fmt.Errorf("Impossible to identify a valid %s config file", dm.configPathEnv)
+		return nil, fmt.Errorf("impossible to identify a valid %s config file", dm.configPathEnv)
 	}
 	return loadConfigManager(path.Join(dir, dm.configFileName))
 }
@@ -40,12 +40,12 @@ func (dm *DependencyManager) ConfigManagerFromFile(dir string) (*config.ConfigMa
 func (dm *DependencyManager) GetConfigManager() (*config.ConfigManager, error) {
 	cfPath, err := dm.getConfigFilePath()
 	if err != nil {
-		return nil, fmt.Errorf("Impossible to identify a valid %s config file", dm.configPathEnv)
+		return nil, fmt.Errorf("impossible to identify a valid %s config file", dm.configPathEnv)
 	}
 
 	cm, err := loadConfigManager(cfPath)
 	if err != nil {
-		return nil, fmt.Errorf("Impossible to find a valid %s nearby configuration file.\nDetails: %v", dm.configFileName, err)
+		return nil, fmt.Errorf("impossible to find a valid %s nearby configuration file.\nDetails: %v", dm.configFileName, err)
 	}
 	return cm, nil
 }
@@ -83,7 +83,7 @@ func (dm *DependencyManager) findNearestConfigFile(currentPath string, hop int8)
 	}
 
 	if currentPath == "/" || hop == 0 {
-		return "", fmt.Errorf("No %s file found", dm.configFileName)
+		return "", fmt.Errorf("no %s file found", dm.configFileName)
 	}
 
 	parentDir := path.Dir(currentPath)

@@ -25,7 +25,7 @@ type updateOutputPayload struct {
 func updateStart(ctx context.Context, out io.Writer, payload updateInputPayload) (updateOutputPayload, error) {
 	res := updateOutputPayload{}
 	if !dir.DirExists(payload.RepoPath) {
-		return res, config.RepoNotFoundErr
+		return res, config.ErrRepoNotFound
 	}
 
 	// TODO: unroll this some way

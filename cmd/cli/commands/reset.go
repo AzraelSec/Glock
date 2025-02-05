@@ -21,7 +21,7 @@ type resetInputPayload struct {
 
 func resetRepo(g git.Git, payload resetInputPayload) error {
 	if !dir.DirExists(payload.gitRepo.Path) {
-		return config.RepoNotFoundErr
+		return config.ErrRepoNotFound
 	}
 
 	branch, err := g.CurrentBranch(payload.gitRepo)
@@ -58,7 +58,7 @@ func resetFactory(dm *dependency.DependencyManager) *cobra.Command {
 			}
 
 			if !routine.AllClean(cm.Repos, g) {
-				return errors.New("Some of the repositories are not clean - it's not safe to switch")
+				return errors.New("some of the repositories are not clean - it's not safe to switch")
 			}
 
 			resetArgs := make([]git.Repo, 0, len(cm.Repos))

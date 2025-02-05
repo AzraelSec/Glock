@@ -25,7 +25,7 @@ func (s *status) statusRepo(gr git.Repo) (statusOutputPayload, error) {
 	res := statusOutputPayload{}
 
 	if !dir.DirExists(gr.Path) {
-		return res, config.RepoNotFoundErr
+		return res, config.ErrRepoNotFound
 	}
 
 	status, err := s.g.Status(gr)
