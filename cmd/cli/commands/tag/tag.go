@@ -9,9 +9,9 @@ import (
 
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/dependency"
-	"github.com/AzraelSec/glock/pkg/dir"
-	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/AzraelSec/glock/pkg/ui"
+	"github.com/AzraelSec/glock/internal/dir"
+	"github.com/AzraelSec/glock/internal/git"
+	"github.com/AzraelSec/glock/internal/ui"
 	"github.com/spf13/cobra"
 )
 

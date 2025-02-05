@@ -4,16 +4,22 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/AzraelSec/glock/pkg/log"
 	"github.com/fatih/color"
 )
+
+type Logger interface {
+	Error(format string, args ...any) (int, error)
+	Info(format string, args ...any) (int, error)
+	Success(format string, args ...any) (int, error)
+	Print(format string, args ...any) (int, error)
+}
 
 type repoLogger struct {
 	output   io.Writer
 	repoName string
 }
 
-func NewRepoLogger(output io.Writer, repoName string) log.Logger {
+func NewRepoLogger(output io.Writer, repoName string) Logger {
 	return repoLogger{
 		output:   output,
 		repoName: repoName,

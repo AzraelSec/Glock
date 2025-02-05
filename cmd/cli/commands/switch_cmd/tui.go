@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dir"
+	"github.com/AzraelSec/glock/internal/git"
 	"github.com/AzraelSec/glock/internal/runner"
-	"github.com/AzraelSec/glock/pkg/dir"
-	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/AzraelSec/glock/pkg/utils"
+	"github.com/AzraelSec/glock/internal/utils"
 	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"

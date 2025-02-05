@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/AzraelSec/glock/pkg/dir"
-	"github.com/AzraelSec/glock/pkg/git"
+	"github.com/AzraelSec/glock/internal/dir"
+	"github.com/AzraelSec/glock/internal/git"
 )
 
 type ExternalGit struct{}

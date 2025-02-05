@@ -9,7 +9,7 @@ import (
 
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/runner"
-	"github.com/AzraelSec/glock/pkg/ui"
+	"github.com/AzraelSec/glock/internal/ui"
 )
 
 type cli struct {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/AzraelSec/glock/pkg/dir"
-	"github.com/AzraelSec/glock/pkg/shell"
+	"github.com/AzraelSec/glock/internal/dir"
+	"github.com/AzraelSec/glock/internal/shell"
 )
 
 var _ Updater = bundlerUpdater{}

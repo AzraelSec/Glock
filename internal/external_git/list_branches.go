@@ -1,8 +1,8 @@
 package external_git
 
 import (
-	"github.com/AzraelSec/glock/pkg/git"
-	gitcb "github.com/AzraelSec/glock/pkg/git_command_builder"
+	"github.com/AzraelSec/glock/internal/git"
+	gitcb "github.com/AzraelSec/glock/internal/git_command_builder"
 )
 
 type listBranches struct {

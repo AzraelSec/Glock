@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/AzraelSec/glock/internal/config"
-	"github.com/AzraelSec/glock/pkg/ui"
+	"github.com/AzraelSec/glock/internal/ui"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -86,9 +86,11 @@ type model struct {
 	spinner spinner.Model
 }
 
-type updateStartMsg struct{ idx int }
-type updateDoneMsg struct{ idx int }
-type abortMsg struct{}
+type (
+	updateStartMsg struct{ idx int }
+	updateDoneMsg  struct{ idx int }
+	abortMsg       struct{}
+)
 
 func updateStartCmd(idx int) tea.Cmd {
 	return func() tea.Msg {

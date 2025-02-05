@@ -3,7 +3,7 @@ package config
 import (
 	"testing"
 
-	"github.com/AzraelSec/glock/pkg/serializer"
+	"github.com/AzraelSec/glock/internal/serializer"
 )
 
 const completeConfigYamlSrc = `

@@ -5,16 +5,16 @@ import (
 	"fmt"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/git"
 	"github.com/AzraelSec/glock/internal/runner"
-	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/AzraelSec/glock/pkg/ui"
+	"github.com/AzraelSec/glock/internal/ui"
 )
 
 type cli struct {
 	repos   []config.LiveRepo
 	tagFn   tagRunnerFunc
 	tagArgs []tagInputPayload
-  isYeet bool
+	isYeet  bool
 }
 
 func newCli(g git.Git, repos []config.LiveRepo, tagPattern string, useCurrent, skipPush, pullBefore, isYeet bool) *cli {
@@ -24,9 +24,9 @@ func newCli(g git.Git, repos []config.LiveRepo, tagPattern string, useCurrent, s
 
 func (c *cli) run() {
 	var out bytes.Buffer
-  if c.isYeet {
-    out.WriteString(YEET_ASCII_IMAGE)
-  }
+	if c.isYeet {
+		out.WriteString(YEET_ASCII_IMAGE)
+	}
 	res := runner.Run(c.tagFn, c.tagArgs)
 
 	for idx, r := range res {

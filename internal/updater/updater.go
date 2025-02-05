@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/AzraelSec/glock/pkg/dir"
+	"github.com/AzraelSec/glock/internal/dir"
 )
 
 const ignoreTag = "_ignore_"

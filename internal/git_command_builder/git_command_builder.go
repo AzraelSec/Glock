@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/AzraelSec/glock/pkg/git"
+	"github.com/AzraelSec/glock/internal/git"
 )
 
 type executor interface {

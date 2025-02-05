@@ -7,9 +7,9 @@ import (
 	"path"
 
 	"github.com/AzraelSec/glock/internal/config"
-	"github.com/AzraelSec/glock/pkg/external_git"
-	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/AzraelSec/glock/pkg/serializer"
+	"github.com/AzraelSec/glock/internal/external_git"
+	"github.com/AzraelSec/glock/internal/git"
+	"github.com/AzraelSec/glock/internal/serializer"
 )
 
 type DependencyManager struct {

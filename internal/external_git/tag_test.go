@@ -3,7 +3,7 @@ package external_git
 import (
 	"testing"
 
-	"github.com/AzraelSec/glock/pkg/git"
+	"github.com/AzraelSec/glock/internal/git"
 )
 
 func TestNewCreateLightWaightTag(t *testing.T) {

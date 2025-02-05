@@ -4,9 +4,9 @@ import (
 	"os"
 
 	"github.com/AzraelSec/glock/internal/dependency"
+	"github.com/AzraelSec/glock/internal/git"
 	"github.com/AzraelSec/glock/internal/log"
 	"github.com/AzraelSec/glock/internal/runner"
-	"github.com/AzraelSec/glock/pkg/git"
 	"github.com/spf13/cobra"
 )
 

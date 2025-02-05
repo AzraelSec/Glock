@@ -4,8 +4,8 @@ import (
 	"errors"
 	"path"
 
-	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/AzraelSec/glock/pkg/serializer"
+	"github.com/AzraelSec/glock/internal/git"
+	"github.com/AzraelSec/glock/internal/serializer"
 )
 
 var ErrRepoNotFound = errors.New("repo not found")

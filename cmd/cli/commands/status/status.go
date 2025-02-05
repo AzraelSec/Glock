@@ -3,9 +3,9 @@ package status
 import (
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/dependency"
+	"github.com/AzraelSec/glock/internal/dir"
+	"github.com/AzraelSec/glock/internal/git"
 	"github.com/AzraelSec/glock/internal/runner"
-	"github.com/AzraelSec/glock/pkg/dir"
-	"github.com/AzraelSec/glock/pkg/git"
 	"github.com/spf13/cobra"
 )
 

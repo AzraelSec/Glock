@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/AzraelSec/glock/internal/config"
-	"github.com/AzraelSec/glock/pkg/git"
-	"github.com/AzraelSec/glock/pkg/ui"
+	"github.com/AzraelSec/glock/internal/git"
+	"github.com/AzraelSec/glock/internal/ui"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -75,8 +75,10 @@ type model struct {
 	isYeet  bool
 }
 
-type tagStartMsg struct{ idx int }
-type tagDoneMsg struct{ idx int }
+type (
+	tagStartMsg struct{ idx int }
+	tagDoneMsg  struct{ idx int }
+)
 
 func tagStartCmd(idx int) tea.Cmd {
 	return func() tea.Msg {
@@ -148,9 +150,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *model) View() string {
 	var buff bytes.Buffer
-  if m.isYeet {
-    buff.WriteString(YEET_ASCII_IMAGE)
-  }
+	if m.isYeet {
+		buff.WriteString(YEET_ASCII_IMAGE)
+	}
 
 	for _, task := range m.tasks {
 		buff.WriteString(m.renderTaskRow(task))
