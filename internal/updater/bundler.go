@@ -17,10 +17,9 @@ func (bundlerUpdater) Tag() string {
 }
 
 func (bundlerUpdater) Update(ctx context.Context, w io.Writer, path string) error {
-	_, err := shell.NewSyncShell(shell.ShellOps{
+	_, err := shell.NewSyncShell(ctx, shell.ShellOps{
 		Cmd:      "bundle install",
 		ExecPath: path,
-		Ctx:      ctx,
 	}).Start(w)
 	return err
 }

@@ -11,7 +11,6 @@ import (
 const SHELL_PROGRAMM = "/bin/sh"
 
 type syncShell struct {
-	ctx     *context.Context
 	process *exec.Cmd
 	Pid     int
 }
@@ -21,23 +20,16 @@ type ShellOps struct {
 	ExecPath  string
 	Env       map[string]string
 	Cmd       string
-	Ctx       context.Context
 }
 
-func NewSyncShell(ops ShellOps) *syncShell {
+func NewSyncShell(ctx context.Context, ops ShellOps) *syncShell {
 	// TODO: make this an os-dependant procedure
 	shellPath := SHELL_PROGRAMM
 	if ops.ShellPath != "" {
 		shellPath = ops.ShellPath
 	}
-	args := []string{"-c", ops.Cmd}
 
-	var process *exec.Cmd
-	if ops.Ctx == nil {
-		process = exec.Command(shellPath, args...)
-	} else {
-		process = exec.CommandContext(ops.Ctx, shellPath, args...)
-	}
+	process := exec.CommandContext(ctx, shellPath, "-c", ops.Cmd)
 
 	if ops.ExecPath != "" {
 		process.Dir = ops.ExecPath
@@ -51,7 +43,6 @@ func NewSyncShell(ops ShellOps) *syncShell {
 	}
 
 	return &syncShell{
-		ctx:     &ops.Ctx,
 		process: process,
 		Pid:     -1,
 	}

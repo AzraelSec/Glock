@@ -33,10 +33,9 @@ func serviceRun(ctx context.Context, _ git.Git, configPath string, _ []string, p
 		RetCode: -1,
 	}
 
-	startProcess := shell.NewSyncShell(shell.ShellOps{
+	startProcess := shell.NewSyncShell(ctx, shell.ShellOps{
 		ExecPath: configPath,
 		Cmd:      payload.cmd,
-		Ctx:      ctx,
 	})
 
 	tsw := log.NewTagStreamWriter(payload.tag, os.Stdout)
@@ -73,10 +72,9 @@ func repoRun(ctx context.Context, _ git.Git, envFilenames []string, payload star
 	}
 
 	denv, _ := godotenv.ReadFrom(payload.gitPath, false, envFilenames...)
-	startProcess := shell.NewSyncShell(shell.ShellOps{
+	startProcess := shell.NewSyncShell(ctx, shell.ShellOps{
 		ExecPath: payload.gitPath,
 		Cmd:      payload.cmd,
-		Ctx:      ctx,
 		Env:      denv,
 	})
 
@@ -173,7 +171,7 @@ func startFactory(dm *dependency.DependencyManager) *cobra.Command {
 
 			stopServiceArgs := make([]startServicePayload, 0, len(disposableService))
 			stopServiceFn := func(payload startServicePayload) (startOutputPayload, error) {
-				return serviceRun(nil, g, path.Dir(cm.ConfigPath), cm.EnvFilenames, payload)
+				return serviceRun(context.Background(), g, path.Dir(cm.ConfigPath), cm.EnvFilenames, payload)
 			}
 			for _, srv := range disposableService {
 				stopServiceArgs = append(stopServiceArgs, startServicePayload{tag: srv.Tag, cmd: srv.Dispose})

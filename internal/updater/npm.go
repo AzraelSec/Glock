@@ -17,10 +17,9 @@ func (npmBundler) Tag() string {
 }
 
 func (npmBundler) Update(ctx context.Context, w io.Writer, path string) error {
-	_, err := shell.NewSyncShell(shell.ShellOps{
+	_, err := shell.NewSyncShell(ctx, shell.ShellOps{
 		Cmd:      "npm i",
 		ExecPath: path,
-		Ctx:      ctx,
 	}).Start(w)
 	return err
 }
