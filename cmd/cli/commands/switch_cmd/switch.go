@@ -110,7 +110,7 @@ type switchCmd struct {
 	err error
 }
 
-func New(dm *dependency.DependencyManager) *switchCmd {
+func New(dm *dependency.Manager) *switchCmd {
 	scmd := &switchCmd{}
 	scmd.g, scmd.err = dm.GetGit()
 	if scmd.err != nil {

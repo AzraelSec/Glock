@@ -54,7 +54,7 @@ func (s *status) collect() []runner.Result[statusOutputPayload] {
 	return runner.Run(statusFn, statusArgs)
 }
 
-func NewStatus(dm *dependency.DependencyManager) *status {
+func NewStatus(dm *dependency.Manager) *status {
 	s := &status{}
 	s.g, s.err = dm.GetGit()
 	if s.err != nil {

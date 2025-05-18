@@ -93,7 +93,7 @@ func createTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
 	return res, nil
 }
 
-func New(dm *dependency.DependencyManager) *tagCmd {
+func New(dm *dependency.Manager) *tagCmd {
 	tcmd := &tagCmd{}
 	tcmd.g, tcmd.err = dm.GetGit()
 	if tcmd.err != nil {

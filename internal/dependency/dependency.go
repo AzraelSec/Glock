@@ -7,37 +7,36 @@ import (
 	"path"
 
 	"github.com/AzraelSec/glock/internal/config"
-	"github.com/AzraelSec/glock/internal/external_git"
 	"github.com/AzraelSec/glock/internal/git"
 	"github.com/AzraelSec/glock/internal/serializer"
 )
 
-type DependencyManager struct {
+type Manager struct {
 	configPathEnv      string
 	configFileName     string
 	maxConfigFileDepth int8
 }
 
-func NewDependencyManager(configPathEnv, configFileName string, maxConfigFileDepth int8) *DependencyManager {
-	return &DependencyManager{
+func NewManager(configPathEnv, configFileName string, maxConfigFileDepth int8) *Manager {
+	return &Manager{
 		configPathEnv:      configPathEnv,
 		configFileName:     configFileName,
 		maxConfigFileDepth: maxConfigFileDepth,
 	}
 }
 
-func (*DependencyManager) GetGit() (git.Git, error) {
-	return external_git.NewExternalGit()
+func (*Manager) GetGit() (git.Git, error) {
+	return git.NewGitCLI()
 }
 
-func (dm *DependencyManager) ConfigManagerFromFile(dir string) (*config.ConfigManager, error) {
+func (dm *Manager) ConfigManagerFromFile(dir string) (*config.ConfigManager, error) {
 	if _, err := os.Stat(dir); err != nil {
 		return nil, fmt.Errorf("impossible to identify a valid %s config file", dm.configPathEnv)
 	}
 	return loadConfigManager(path.Join(dir, dm.configFileName))
 }
 
-func (dm *DependencyManager) GetConfigManager() (*config.ConfigManager, error) {
+func (dm *Manager) GetConfigManager() (*config.ConfigManager, error) {
 	cfPath, err := dm.getConfigFilePath()
 	if err != nil {
 		return nil, fmt.Errorf("impossible to identify a valid %s config file", dm.configPathEnv)
@@ -50,7 +49,7 @@ func (dm *DependencyManager) GetConfigManager() (*config.ConfigManager, error) {
 	return cm, nil
 }
 
-func (dm *DependencyManager) getConfigFilePath() (string, error) {
+func (dm *Manager) getConfigFilePath() (string, error) {
 	if v, exists := os.LookupEnv(dm.configPathEnv); exists {
 		return v, nil
 	}
@@ -76,7 +75,7 @@ func loadConfigManager(configPath string) (*config.ConfigManager, error) {
 	return config.NewConfigManager(configPath, rawConfig, serializer.NewYamlDecoder())
 }
 
-func (dm *DependencyManager) findNearestConfigFile(currentPath string, hop int8) (string, error) {
+func (dm *Manager) findNearestConfigFile(currentPath string, hop int8) (string, error) {
 	_, err := os.Stat(path.Join(currentPath, dm.configFileName))
 	if err == nil {
 		return path.Join(currentPath, dm.configFileName), nil

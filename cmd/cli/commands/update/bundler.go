@@ -1,4 +1,4 @@
-package updater
+package update
 
 import (
 	"context"
@@ -8,23 +8,23 @@ import (
 	"github.com/AzraelSec/glock/internal/shell"
 )
 
-var _ Updater = npmBundler{}
+var _ updater = bundlerUpdater{}
 
-type npmBundler struct{}
+type bundlerUpdater struct{}
 
-func (npmBundler) Tag() string {
-	return "npm"
+func (bundlerUpdater) Tag() string {
+	return "bundler"
 }
 
-func (npmBundler) Update(ctx context.Context, w io.Writer, path string) error {
+func (bundlerUpdater) Update(ctx context.Context, w io.Writer, path string) error {
 	_, err := shell.NewSyncShell(ctx, shell.ShellOps{
-		Cmd:      "npm i",
+		Cmd:      "bundle install",
 		ExecPath: path,
 	}).Start(w)
 	return err
 }
 
-func (npmBundler) Infer(d dir.Directory) (bool, error) {
+func (bundlerUpdater) Infer(d dir.Directory) (bool, error) {
 	files, err := d.Files()
 	if err != nil {
 		return false, err
@@ -32,7 +32,7 @@ func (npmBundler) Infer(d dir.Directory) (bool, error) {
 
 	ok := false
 	for _, file := range files {
-		if file != "package-lock.json" {
+		if file != "Gemfile.lock" && file != "Gemfile" {
 			continue
 		}
 		ok = true

@@ -1,49 +1,25 @@
-package gitcb
+package git
 
 import (
 	"fmt"
 	"os/exec"
 	"strings"
-
-	"github.com/AzraelSec/glock/internal/git"
 )
 
-type executor interface {
-	Output() ([]byte, int, error)
-}
-
 type CommandBuilder struct {
-	exec       func(e string, args ...string) executor
-	repo       *git.Repo
+	repo       *Repo
 	entryPoint string
 	args       []string
-}
-
-type commandBuilderExecutor struct {
-	exec.Cmd
-}
-
-func (be commandBuilderExecutor) Output() ([]byte, int, error) {
-	o, e := be.Cmd.Output()
-	return o, be.Cmd.ProcessState.ExitCode(), e
-}
-
-func (e *commandBuilderExecutor) ExitCode() int {
-	return e.Cmd.ProcessState.ExitCode()
 }
 
 func NewCommandBuilder() *CommandBuilder {
 	return &CommandBuilder{
 		entryPoint: "git", // todo: change this to dynamic
 		args:       []string{},
-		exec: func(e string, args ...string) executor {
-			cmd := exec.Command(e, args...)
-			return &commandBuilderExecutor{*cmd}
-		},
 	}
 }
 
-func (cb *CommandBuilder) SetRepo(r git.Repo) *CommandBuilder {
+func (cb *CommandBuilder) SetRepo(r Repo) *CommandBuilder {
 	if cb.repo == nil {
 		cb.repo = &r
 	}
@@ -72,10 +48,16 @@ func (cb *CommandBuilder) buildCommand() (string, []string) {
 	return cb.entryPoint, args
 }
 
-func (cb *CommandBuilder) RunWithOutput() (string, error) {
+func (cb *CommandBuilder) run() ([]byte, int, error) {
 	ep, args := cb.buildCommand()
+	cmd := exec.Command(ep, args...)
 
-	bo, _, err := cb.exec(ep, args...).Output()
+	o, e := cmd.Output()
+	return o, cmd.ProcessState.ExitCode(), e
+}
+
+func (cb *CommandBuilder) RunWithOutput() (string, error) {
+	bo, _, err := cb.run()
 	if err != nil {
 		return "", err
 	}
@@ -85,8 +67,7 @@ func (cb *CommandBuilder) RunWithOutput() (string, error) {
 }
 
 func (cb *CommandBuilder) RunWithExitCode() int {
-	ep, args := cb.buildCommand()
-	_, ec, _ := cb.exec(ep, args...).Output()
+	_, ec, _ := cb.run()
 	return ec
 }
 

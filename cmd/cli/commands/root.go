@@ -14,10 +14,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const CONFIG_PATH_ENV = "GLOCK_CONFIG_PATH"
-const VERSION = "0.0.1"
-const CONFIG_FILE_NAME = "glock.yml"
-const MAX_CONFIG_FILE_DEPTH = 20
+const (
+	CONFIG_PATH_ENV       = "GLOCK_CONFIG_PATH"
+	VERSION               = "0.0.1"
+	CONFIG_FILE_NAME      = "glock.yml"
+	MAX_CONFIG_FILE_DEPTH = 20
+)
 
 var rootCmd = &cobra.Command{
 	Use:          "glock",
@@ -35,7 +37,7 @@ func (w RedWriter) Write(p []byte) (n int, err error) {
 }
 
 func ExecuteRoot() {
-	dm := dependency.NewDependencyManager(CONFIG_PATH_ENV, CONFIG_FILE_NAME, MAX_CONFIG_FILE_DEPTH)
+	dm := dependency.NewManager(CONFIG_PATH_ENV, CONFIG_FILE_NAME, MAX_CONFIG_FILE_DEPTH)
 
 	rootCmd.SetErr(RedWriter{os.Stderr})
 	rootCmd.AddCommand(

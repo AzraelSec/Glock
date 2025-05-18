@@ -42,7 +42,7 @@ func resetRepo(g git.Git, payload resetInputPayload) error {
 	return g.Pull(payload.gitRepo, false)
 }
 
-func resetFactory(dm *dependency.DependencyManager) *cobra.Command {
+func resetFactory(dm *dependency.Manager) *cobra.Command {
 	var skipPull *bool
 	cmd := &cobra.Command{
 		Use:   "reset",

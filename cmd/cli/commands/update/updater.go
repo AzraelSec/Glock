@@ -1,4 +1,4 @@
-package updater
+package update
 
 import (
 	"context"
@@ -12,7 +12,7 @@ const ignoreTag = "_ignore_"
 
 var ErrNoUpdater = errors.New("no matching updater found")
 
-var updaters = []Updater{
+var updaters = []updater{
 	yarnUpdater{},
 	npmBundler{},
 	pnpmBundler{},
@@ -20,13 +20,13 @@ var updaters = []Updater{
 	gomodUpdater{},
 }
 
-type Updater interface {
+type updater interface {
 	Tag() string
 	Infer(dir.Directory) (bool, error)
 	Update(ctx context.Context, output io.Writer, path string) error
 }
 
-func Infer(d dir.Directory) (Updater, error) {
+func inferUpdater(d dir.Directory) (updater, error) {
 	for _, updater := range updaters {
 		if ok, _ := updater.Infer(d); ok {
 			return updater, nil
@@ -35,7 +35,7 @@ func Infer(d dir.Directory) (Updater, error) {
 	return nil, ErrNoUpdater
 }
 
-func MatchByTag(tag string) (Updater, error) {
+func matchUpdaterByTag(tag string) (updater, error) {
 	for _, updater := range updaters {
 		if updater.Tag() == tag {
 			return updater, nil
@@ -44,6 +44,6 @@ func MatchByTag(tag string) (Updater, error) {
 	return nil, ErrNoUpdater
 }
 
-func IsIgnoreTag(tag string) bool {
+func isIgnoreUpdaterTag(tag string) bool {
 	return tag == ignoreTag
 }

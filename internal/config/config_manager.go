@@ -37,7 +37,6 @@ func NewConfigManager(configPath string, src []byte, d serializer.Serializer) (*
 
 	repos := []LiveRepo{}
 	for configKey, repoData := range dataSource.Repos {
-
 		prefixPath := "./"
 		if configPath != "" {
 			prefixPath = path.Dir(configPath)

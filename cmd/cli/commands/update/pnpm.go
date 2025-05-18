@@ -1,4 +1,4 @@
-package updater
+package update
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"github.com/AzraelSec/glock/internal/shell"
 )
 
-var _ Updater = pnpmBundler{}
+var _ updater = pnpmBundler{}
 
 type pnpmBundler struct{}
 

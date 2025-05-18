@@ -43,7 +43,7 @@ func setupConfig(url, targetDir string) (string, error) {
 	return finalPath, nil
 }
 
-func remoteCommand(dm *dependency.DependencyManager) *cobra.Command {
+func remoteCommand(dm *dependency.Manager) *cobra.Command {
 	return &cobra.Command{
 		Use:   "remote",
 		Short: "Use a remote configuration (via URL) to clone the configured repos",

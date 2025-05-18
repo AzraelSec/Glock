@@ -8,7 +8,6 @@ import (
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/dir"
-	"github.com/AzraelSec/glock/internal/updater"
 	"github.com/spf13/cobra"
 )
 
@@ -30,12 +29,12 @@ func updateStart(ctx context.Context, out io.Writer, payload updateInputPayload)
 
 	// TODO: unroll this some way
 	if payload.UpdaterTag != "" {
-		if updater.IsIgnoreTag(payload.UpdaterTag) {
+		if isIgnoreUpdaterTag(payload.UpdaterTag) {
 			res.Ignored = true
 			return res, nil
 		}
 
-		repoUpdater, err := updater.MatchByTag(payload.UpdaterTag)
+		repoUpdater, err := matchUpdaterByTag(payload.UpdaterTag)
 		if err == nil {
 			res.UpdaterTag = repoUpdater.Tag()
 			err := repoUpdater.Update(ctx, out, payload.RepoPath)
@@ -47,7 +46,7 @@ func updateStart(ctx context.Context, out io.Writer, payload updateInputPayload)
 	if err != nil {
 		return res, err
 	}
-	repoUpdater, err := updater.Infer(d)
+	repoUpdater, err := inferUpdater(d)
 	if err != nil {
 		return res, err
 	}
@@ -92,7 +91,7 @@ type update struct {
 	err error
 }
 
-func NewUpdate(dm *dependency.DependencyManager) *update {
+func NewUpdate(dm *dependency.Manager) *update {
 	u := &update{}
 	u.cm, u.err = dm.GetConfigManager()
 	return u

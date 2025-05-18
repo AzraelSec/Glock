@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func localCommand(dm *dependency.DependencyManager) *cobra.Command {
+func localCommand(dm *dependency.Manager) *cobra.Command {
 	return &cobra.Command{
 		Use:   "local",
 		Short: "Use a local configuration to clone the configured repos",

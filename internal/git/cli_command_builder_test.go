@@ -1,21 +1,12 @@
-package gitcb
+package git
 
 import (
 	"reflect"
 	"testing"
 )
 
-type TestExecutor struct{}
-
-func (TestExecutor) Output() ([]byte, int, error) {
-	return []byte{}, 1, nil
-}
-
 func NewTestCommandBuilder() *CommandBuilder {
 	return &CommandBuilder{
-		exec: func(e string, args ...string) executor {
-			return TestExecutor{}
-		},
 		entryPoint: "git",
 		args:       []string{},
 	}

@@ -6,10 +6,10 @@ import (
 )
 
 type initCmd struct {
-	dm *dependency.DependencyManager
+	dm *dependency.Manager
 }
 
-func New(dm *dependency.DependencyManager) *initCmd {
+func New(dm *dependency.Manager) *initCmd {
 	return &initCmd{dm}
 }
 

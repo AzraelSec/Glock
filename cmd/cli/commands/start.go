@@ -90,7 +90,7 @@ func repoRun(ctx context.Context, _ git.Git, envFilenames []string, payload star
 	return res, nil
 }
 
-func startFactory(dm *dependency.DependencyManager) *cobra.Command {
+func startFactory(dm *dependency.Manager) *cobra.Command {
 	var filteredRepos *[]string
 
 	cmd := &cobra.Command{
