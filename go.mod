@@ -1,6 +1,6 @@
 module github.com/AzraelSec/glock
 
-go 1.21
+go 1.26
 
 require (
 	github.com/AzraelSec/godotenv v0.0.0-20230908093005-c32e98a71848
