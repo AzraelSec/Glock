@@ -1,7 +1,7 @@
 package utils
 
 func Uniq[T comparable](list []T) []T {
-	cmpMap := make(map[T]interface{})
+	cmpMap := make(map[T]any)
 	for _, el := range list {
 		cmpMap[el] = struct{}{}
 	}

@@ -45,7 +45,7 @@ func (gc GitCLI) ListRemotes(repo Repo) ([]Remote, error) {
 		return remotes, err
 	}
 
-	for _, remote := range strings.Split(out, "\n") {
+	for remote := range strings.SplitSeq(out, "\n") {
 		remotes = append(remotes, Remote(remote))
 	}
 	return remotes, nil
@@ -186,7 +186,7 @@ func (gc GitCLI) ListBranches(repo Repo) ([]BranchName, error) {
 		return brs, err
 	}
 
-	for _, br := range strings.Split(out, "\n") {
+	for br := range strings.SplitSeq(out, "\n") {
 		brs = append(brs, BranchName(br))
 	}
 	return brs, nil

@@ -4,11 +4,11 @@ import yaml "gopkg.in/yaml.v3"
 
 type yamlDecoder struct{}
 
-func (yd yamlDecoder) Marshal(in interface{}) ([]byte, error) {
+func (yd yamlDecoder) Marshal(in any) ([]byte, error) {
 	return yaml.Marshal(in)
 }
 
-func (yd yamlDecoder) Unmarshal(in []byte, out interface{}) error {
+func (yd yamlDecoder) Unmarshal(in []byte, out any) error {
 	return yaml.Unmarshal(in, out)
 }
 
