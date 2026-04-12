@@ -16,16 +16,17 @@ import (
 
 const (
 	CONFIG_PATH_ENV       = "GLOCK_CONFIG_PATH"
-	VERSION               = "0.0.1"
 	CONFIG_FILE_NAME      = "glock.yml"
 	MAX_CONFIG_FILE_DEPTH = 20
 )
+
+var Version = "dev"
 
 var rootCmd = &cobra.Command{
 	Use:          "glock",
 	Short:        "Shooting flies with a bazooka \U0001f680",
 	SilenceUsage: true,
-	Version:      VERSION,
+	Version:      Version,
 }
 
 type RedWriter struct {
