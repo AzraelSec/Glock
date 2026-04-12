@@ -83,7 +83,7 @@ func remoteCommand(dm *dependency.Manager) *cobra.Command {
 			for i, res := range results {
 				logger := log.NewRepoLogger(os.Stdout, cm.Repos[i].Name)
 				if res.Error != nil {
-					logger.Error(res.Error.Error())
+					logger.Error("%s", res.Error)
 				} else {
 					logger.Success("successfully cloned")
 				}
