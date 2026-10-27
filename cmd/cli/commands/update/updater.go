@@ -18,6 +18,7 @@ var updaters = []updater{
 	pnpmBundler{},
 	bundlerUpdater{},
 	gomodUpdater{},
+	cargoUpdater{},
 }
 
 type updater interface {
