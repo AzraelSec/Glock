@@ -37,7 +37,7 @@
 ## Update Command
 - `update` is TUI-first by default.
 - For scripting/debugging, use `glock update --disableTui`; `--output` only works together with `--disableTui`.
-- Updater inference is lockfile-based in this order: `yarn.lock`, `package-lock.json`, `pnpm-lock.yaml`, `Gemfile.lock`/`Gemfile`, `go.mod`.
+- Updater inference is lockfile-based in this order: `yarn.lock`, `package-lock.json`, `pnpm-lock.yaml`, `Gemfile.lock`/`Gemfile`, `go.mod`, `Cargo.lock`/`Cargo.toml`.
 - Per-repo `updater` can force a backend; `_ignore_` skips updates for that repo.
 
 ## Init Command
