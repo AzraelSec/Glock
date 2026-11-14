@@ -1,0 +1,71 @@
+package init_cmd
+
+import (
+	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dependency"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+type configTransport struct {
+	status int
+	raw    string
+}
+
+func (r configTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return &http.Response{StatusCode: r.status, Status: http.StatusText(r.status), Body: io.NopCloser(strings.NewReader(r.raw)), Header: make(http.Header)}, nil
+}
+
+func TestSetupConfigValidatesBeforeWriting(t *testing.T) {
+	previous := http.DefaultTransport
+	defer func() { http.DefaultTransport = previous }()
+	for _, tc := range []configTransport{
+		{404, "not found"}, {200, "repos: {}"}, {200, "version: 2\ncomponents: {x: {run: echo}}"}, {200, "version: 2\nsources: {x: {type: github}}"},
+	} {
+		http.DefaultTransport = tc
+		dir := filepath.Join(t.TempDir(), "project")
+		if _, err := setupConfig("https://example.invalid/config", dir); err == nil {
+			t.Fatal("invalid remote config accepted")
+		}
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Fatal("invalid config created destination")
+		}
+	}
+	http.DefaultTransport = configTransport{200, "version: 2\nsources: {x: {type: github, url: 'git@github.com:org/repo.git', head: main, path: repo}}"}
+	dir := filepath.Join(t.TempDir(), "project")
+	path, err := setupConfig("https://example.invalid/config", dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	if _, err = setupConfig("https://example.invalid/config", dir); err == nil {
+		t.Fatal("overwrote config")
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Fatal("existing file changed")
+	}
+}
+
+func TestInitReportsCloneFailure(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "repo"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	raw := "version: 2\nsources: {x: {type: github, url: 'git@github.com:org/repo.git', head: main, path: repo}}\n"
+	path := filepath.Join(root, "glock.yml")
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.ConfigPathEnv, path)
+	cmd := localCommand(dependency.NewManager())
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "not a usable Git checkout") {
+		t.Fatalf("expected clone failure, got %v", err)
+	}
+}

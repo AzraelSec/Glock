@@ -1,6 +1,8 @@
 package init_cmd
 
 import (
+	"errors"
+	"fmt"
 	"os"
 
 	"github.com/AzraelSec/glock/internal/dependency"
@@ -25,8 +27,8 @@ func localCommand(dm *dependency.Manager) *cobra.Command {
 				return err
 			}
 
-			initFn := func(cloneOps git.CloneOps) (struct{}, error) {
-				return struct{}{}, g.Clone(cloneOps)
+			initFn := func(cloneOps git.CloneOps) (bool, error) {
+				return cloneOrResume(g, cloneOps)
 			}
 
 			initArgs := make([]git.CloneOps, 0, len(cm.Repos))
@@ -40,16 +42,20 @@ func localCommand(dm *dependency.Manager) *cobra.Command {
 
 			results := runner.Run(initFn, initArgs)
 
+			var failures []error
 			for i, res := range results {
 				logger := log.NewRepoLogger(os.Stdout, cm.Repos[i].Name)
 				if res.Error != nil {
 					logger.Error("%s", res.Error)
+					failures = append(failures, fmt.Errorf("%s: %w", cm.Repos[i].Name, res.Error))
+				} else if res.Res {
+					logger.Success("already cloned; matching origin")
 				} else {
 					logger.Success("successfully cloned")
 				}
 			}
 
-			return nil
+			return errors.Join(failures...)
 		},
 	}
 }
