@@ -1,0 +1,272 @@
+package orchestrator
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"runtime"
+	"sync"
+
+	"github.com/AzraelSec/glock/internal/event"
+	"github.com/AzraelSec/glock/internal/process"
+	"github.com/AzraelSec/glock/internal/task"
+)
+
+// maxConcurrentActions bounds how many component lifecycle operations
+// (fork/exec or signal-and-wait) run simultaneously during workspace
+// start/stop. Unbounded fan-out would fire a fork/exec and SIGINT storm
+// from a single keypress on large workspaces.
+var maxConcurrentActions = max(runtime.NumCPU(), 2)
+
+// StartComponent reserves the entire lifecycle before running setup.
+func (o *Orchestrator) StartComponent(name string) error {
+	done, err := o.begin(name)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return o.startComponent(name)
+}
+
+func (o *Orchestrator) startComponent(name string) error {
+	if p, ok := o.procMgr.Get(name); ok {
+		if p.State == process.Running {
+			return process.ErrAlreadyRunning
+		}
+		if p.State == process.Stopping {
+			return process.ErrStopping
+		}
+	}
+	// A completed/crashed previous execution still needs its cleanup.
+	if o.needsCleanup(name) {
+		if err := o.stopComponent(name); err != nil {
+			return err
+		}
+	}
+	cfg := o.cfg.Components[name]
+	dir := cfg.ExecutionDir(o.cfg.Sources, o.rootDir)
+	env := loadEnv(dir, cfg.EnvFilenames)
+	if err := o.workCtx.Err(); err != nil {
+		return err
+	}
+	o.lifecycleMu.Lock()
+	o.cleanup[name] = env
+	o.lifecycleMu.Unlock()
+	o.bus.Publish(event.Event{Name: event.ComponentStarting, Component: name})
+	if cfg.On != nil {
+		if err := o.runHooks(o.workCtx, cfg.On.Startup, name, dir, env, false); err != nil {
+			return errors.Join(err, o.stopComponent(name))
+		}
+	}
+	if err := o.workCtx.Err(); err != nil {
+		return errors.Join(err, o.stopComponent(name))
+	}
+	if err := o.procMgr.Start(process.StartRequest{Component: name, Command: cfg.Run, ExecDir: dir, Env: env}); err != nil {
+		return errors.Join(err, o.stopComponent(name))
+	}
+	return nil
+}
+
+func (o *Orchestrator) needsCleanup(name string) bool {
+	o.lifecycleMu.Lock()
+	defer o.lifecycleMu.Unlock()
+	_, ok := o.cleanup[name]
+	return ok
+}
+
+// StopComponent awaits cleanup even when the main process already exited.
+func (o *Orchestrator) StopComponent(name string) error {
+	done, err := o.begin(name)
+	if err != nil {
+		return err
+	}
+	defer done()
+	return o.stopComponent(name)
+}
+
+func (o *Orchestrator) stopComponent(name string) error {
+	o.lifecycleMu.Lock()
+	env, eligible := o.cleanup[name]
+	o.lifecycleMu.Unlock()
+	if !eligible {
+		return fmt.Errorf("%w: %s", process.ErrNotRunning, name)
+	}
+	o.bus.Publish(event.Event{Name: event.ComponentStopping, Component: name})
+	var errs []error
+	if proc, ok := o.procMgr.Get(name); ok && proc.State == process.Running {
+		if err := o.procMgr.Stop(name); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	cfg := o.cfg.Components[name]
+	if cfg.On != nil {
+		errs = append(errs, o.runHooks(context.Background(), cfg.On.Shutdown, name,
+			cfg.ExecutionDir(o.cfg.Sources, o.rootDir), env, true))
+	}
+	o.lifecycleMu.Lock()
+	delete(o.cleanup, name)
+	err := errors.Join(errs...)
+	if o.stopping && err != nil {
+		o.cleanupErrors = append(o.cleanupErrors, err)
+	}
+	o.lifecycleMu.Unlock()
+	return err
+}
+
+// Restart follows the same cleanup/setup paths and reloads dotenv values.
+func (o *Orchestrator) RestartComponent(name string) error {
+	done, err := o.begin(name)
+	if err != nil {
+		return err
+	}
+	defer done()
+	if o.needsCleanup(name) {
+		if err := o.stopComponent(name); err != nil {
+			return err
+		}
+	}
+	return o.startComponent(name)
+}
+
+// RunTask admits an ordinary task owned by the application work context.
+func (o *Orchestrator) RunTask(name string) error {
+	done, err := o.begin("")
+	if err != nil {
+		return err
+	}
+	defer done()
+	t, ok := o.cfg.Tasks[name]
+	if !ok {
+		return fmt.Errorf("task %q not found", name)
+	}
+	_, err = o.taskMgr.RunContext(o.workCtx, &task.Task{
+		Name: name, Description: t.Description, Command: t.Run, ExecDir: o.rootDir,
+		State: task.Pending, Output: process.NewRingOutput(0),
+	})
+	return err
+}
+
+// StartWorkspace starts all non-running components in the given workspace.
+// Components that are already Running are skipped. Components in Sleeping,
+// Stopped, or Failed state are started (restarted if needed). The method
+// runs component starts concurrently and returns an aggregated error if
+// any component failed to start. An unknown workspace name is an error.
+//
+// The workspace.started event is published only when every component
+// start succeeded, so the event stream never claims success on partial
+// failure.
+func (o *Orchestrator) StartWorkspace(name string) error {
+	done, err := o.begin("")
+	if err != nil {
+		return err
+	}
+	defer done()
+	names, ok := o.componentNamesForWorkspace(name)
+	if !ok {
+		return fmt.Errorf("workspace %q not found", name)
+	}
+	o.bus.Publish(event.Event{
+		Name:    event.WorkspaceStarting,
+		Payload: &event.WorkspacePayload{Workspace: name, Components: len(names)},
+	})
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(names))
+	sem := make(chan struct{}, maxConcurrentActions)
+
+	for _, compName := range names {
+		// Skip components that are already running or stopping.
+		if proc, ok := o.procMgr.Get(compName); ok &&
+			(proc.State == process.Running || proc.State == process.Stopping) {
+			continue
+		}
+
+		wg.Add(1)
+		go func(n string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if err := o.StartComponent(n); err != nil {
+				errCh <- fmt.Errorf("component %q: %w", n, err)
+			}
+		}(compName)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	o.bus.Publish(event.Event{
+		Name:    event.WorkspaceStarted,
+		Payload: &event.WorkspacePayload{Workspace: name, Components: len(names)},
+	})
+	return nil
+}
+
+// StopWorkspace stops all running components in the given workspace.
+// Components that are not Running are skipped. The method runs component
+// stops concurrently and returns an aggregated error if any component
+// failed to stop. An unknown workspace name is an error.
+//
+// The workspace.stopped event is published only when every component
+// stop succeeded.
+func (o *Orchestrator) StopWorkspace(name string) error {
+	done, err := o.begin("")
+	if err != nil {
+		return err
+	}
+	defer done()
+	names, ok := o.componentNamesForWorkspace(name)
+	if !ok {
+		return fmt.Errorf("workspace %q not found", name)
+	}
+	o.bus.Publish(event.Event{
+		Name:    event.WorkspaceStopping,
+		Payload: &event.WorkspacePayload{Workspace: name, Components: len(names)},
+	})
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, len(names))
+	sem := make(chan struct{}, maxConcurrentActions)
+
+	for _, compName := range names {
+		// Only stop components that are actually running.
+		if !o.needsCleanup(compName) {
+			continue
+		}
+
+		wg.Add(1)
+		go func(n string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if err := o.StopComponent(n); err != nil {
+				errCh <- fmt.Errorf("component %q: %w", n, err)
+			}
+		}(compName)
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	var errs []error
+	for err := range errCh {
+		errs = append(errs, err)
+	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+
+	o.bus.Publish(event.Event{
+		Name:    event.WorkspaceStopped,
+		Payload: &event.WorkspacePayload{Workspace: name, Components: len(names)},
+	})
+	return nil
+}
