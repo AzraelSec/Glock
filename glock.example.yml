@@ -1,13 +1,91 @@
-open_command: open
-root_path: /some/path/ 
-root_main_stream: master
+# Example glock.yml (v2 schema).
+#
+# This file is validated by TestParseConfigV2_ValidExample in
+# internal/config/config_v2_test.go — keep them in sync.
 
-repos:
-  api-router:
-    remote: git@github.com:AzraelSec/glock.git
-  backpack:
-    remote: git@github.com:AzraelSec/glock.git
-    rel_path: something_different
-    start_cmd: "echo this repo is starting..."
-    stop_cmd: "echo this repo is stopping..."
-    exclude: true
+version: 2
+
+# Optional settings used by the existing Git commands.
+tag_pattern: 'v{.Now.Format("20060102.150405")}'
+
+# Every source requires a local directory. Remote paths are relative to this
+# file's folder. Filesystem paths use an existing directory directly and may
+# be absolute or relative to the project root.
+sources:
+  backend:
+    type: github                # git clone
+    path: backend
+    url: git@github.com:AzraelSec/backend.git
+    head: main                  # default branch (required for github)
+    updater: go                 # optional; otherwise infer from lockfiles
+    exclude_tag: false          # optional; skip this source when tagging
+  frontend:
+    type: github
+    path: frontend
+    url: git@github.com:AzraelSec/frontend.git
+    head: master
+  assets:
+    type: http                  # plain download, no branch concept
+    path: public
+    url: http://azralesec.sh/something.png
+  tools:
+    type: filesystem            # an existing local directory
+    path: /opt/acme/tools
+
+# Components are the services you run. A component without `source` is a
+# host executable and runs in this file's folder.
+components:
+  api:
+    source: backend
+    # .env files loaded (in order; later files win) from the component's
+    # execution dir before the process starts.
+    env_filenames:
+      - .env
+      - .env.local
+    run: "go run main.go"
+  api-docs:
+    source: backend
+    run: "go run ./cmd/docs.go"
+  SPA:
+    source: frontend
+    run: "pnpm run dev"
+    on:
+      startup:                  # run before the component starts
+        - build-assets
+      shutdown:                 # run after the component stops
+        - clean-assets
+  local-proxy:                  # sourceless: runs from the project folder
+    run: "caddy reverse-proxy --from :8080 --to :3000"
+
+# Workspaces are named groups of components for focused start/stop.
+workspaces:
+  backend-focused:
+    - api
+    - api-docs
+  only-frontend:
+    - SPA
+
+# Project-level lifecycle hooks, referencing tasks by key.
+on:
+  startup:
+    - docker-compose-up
+  shutdown:
+    - docker-compose-down
+
+# Tasks are one-shot commands declared once and referenced by key.
+tasks:
+  docker-compose-up:
+    description: "run docker compose"
+    run: docker-compose up -d
+  docker-compose-down:
+    description: "stop docker compose"
+    run: docker-compose stop
+  build-assets:
+    description: "build assets"
+    run: pnpm run build
+  clean-assets:
+    description: "clean built assets"
+    run: pnpm run clean
+  print-port:
+    description: "print out current PORT"
+    run: echo $PORT
