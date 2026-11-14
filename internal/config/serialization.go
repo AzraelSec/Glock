@@ -2,14 +2,14 @@ package config
 
 import "errors"
 
-type Global struct {
+type GlobalV1 struct {
 	RootPath     string   `yaml:"root_path" json:"root_path,omitempty"`
 	RootRefs     string   `yaml:"root_main_stream" json:"root_main_stream"`
 	EnvFilenames []string `yaml:"env_filenames" json:"env_filenames"`
 	TagPattern   string   `yaml:"tag_pattern" json:"tag_pattern"`
 }
 
-type ConfigRepo struct {
+type ConfigRepoV1 struct {
 	Updater    string   `yaml:"updater" json:"updater,omitempty"`
 	OnStart    []string `yaml:"on_start" json:"on_start,omitempty"`
 	OnStop     string   `yaml:"on_stop" json:"on_stop,omitempty"`
@@ -19,21 +19,22 @@ type ConfigRepo struct {
 	Refs       string   `yaml:"main_stream" json:"main_stream,omitempty"`
 }
 
-type Services struct {
+type ServicesV1 struct {
 	Tag     string `yaml:"tag" json:"tag,omitempty"`
 	Cmd     string `yaml:"cmd" json:"cmd,omitempty"`
 	Dispose string `yaml:"dispose" json:"dispose,omitempty"`
 }
 
-type Config struct {
-	Repos    map[string]*ConfigRepo `yaml:"repos" json:"repos"`
-	Services []Services             `yaml:"services" json:"services"`
-	Global   `yaml:",inline"`
+type ConfigV1 struct {
+	Version  string                   `yaml:"version,omitempty"`
+	Repos    map[string]*ConfigRepoV1 `yaml:"repos" json:"repos"`
+	Services []ServicesV1             `yaml:"services" json:"services"`
+	GlobalV1 `yaml:",inline"`
 }
 
 var ErrConfigValidation = errors.New("invalid config")
 
-func (c Config) Validate() error {
+func (c ConfigV1) Validate() error {
 	for _, rp := range c.Repos {
 		if rp == nil || rp.Remote == "" {
 			return ErrConfigValidation

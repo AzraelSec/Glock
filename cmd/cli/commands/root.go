@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"github.com/AzraelSec/glock/cmd/cli/commands/config_cmd"
 	"io"
 	"os"
 
@@ -38,10 +39,11 @@ func (w RedWriter) Write(p []byte) (n int, err error) {
 }
 
 func ExecuteRoot() {
-	dm := dependency.NewManager(CONFIG_PATH_ENV, CONFIG_FILE_NAME, MAX_CONFIG_FILE_DEPTH)
+	dm := dependency.NewManager()
 
 	rootCmd.SetErr(RedWriter{os.Stderr})
 	rootCmd.AddCommand(
+		config_cmd.NewCommand(dm),
 		startFactory(dm),
 		init_cmd.New(dm).Command(),
 		status.NewStatus(dm).Command(),
@@ -50,5 +52,7 @@ func ExecuteRoot() {
 		resetFactory(dm),
 		tag.New(dm).Command(),
 	)
-	rootCmd.Execute()
+	if err := rootCmd.Execute(); err != nil {
+		os.Exit(1)
+	}
 }

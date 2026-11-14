@@ -2,99 +2,50 @@ package config
 
 import (
 	"errors"
-	"path"
+	"fmt"
+	"sort"
 
 	"github.com/AzraelSec/glock/internal/git"
-	"github.com/AzraelSec/glock/internal/serializer"
 )
 
 var ErrRepoNotFound = errors.New("repo not found")
 
+// ConfigManager is the Git command catalog; runtime definitions stay in Project.
 type ConfigManager struct {
-	Repos        []LiveRepo
-	ConfigPath   string
-	TagPattern   string
-	Services     []Services
-	EnvFilenames []string
+	Repos      []LiveRepo
+	ConfigPath string
+	TagPattern string
 }
-
+type RepoOptions struct {
+	Updater    string
+	ExcludeTag bool
+}
 type LiveRepo struct {
 	Name      string
 	GitConfig git.Repo
-	Config    ConfigRepo
+	Config    RepoOptions
 }
 
-func NewConfigManager(configPath string, src []byte, d serializer.Serializer) (*ConfigManager, error) {
-	// TODO: introduce JSON-schema validation in here
-	dataSource := new(Config)
-	if err := d.Unmarshal(src, dataSource); err != nil {
-		return nil, err
-	}
-
-	if err := dataSource.Validate(); err != nil {
-		return nil, err
-	}
-
-	repos := []LiveRepo{}
-	for configKey, repoData := range dataSource.Repos {
-		prefixPath := "./"
-		if configPath != "" {
-			prefixPath = path.Dir(configPath)
+func RepositoryCatalog(project *Project) (*ConfigManager, error) {
+	cm := &ConfigManager{ConfigPath: project.Path, TagPattern: project.Config.TagPattern}
+	names := make([]string, 0, len(project.Config.Sources))
+	for name, src := range project.Config.Sources {
+		if src.Type == SourceTypeGitHub {
+			names = append(names, name)
 		}
-		if dataSource.RootPath != "" {
-			prefixPath = dataSource.RootPath
-		}
-
-		res, err := hydrateRepoConfig(configKey, prefixPath, dataSource.RootRefs, *repoData)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		src := project.Config.Sources[name]
+		remote, err := git.NewRemoteGitUrl(*src.URL)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("sources.%s.url: %w", name, err)
 		}
-
-		repos = append(repos, res)
+		dir := src.LocalDir(project.Root)
+		cm.Repos = append(cm.Repos, LiveRepo{Name: name, GitConfig: git.Repo{Remote: remote, Refs: git.BranchName(*src.Head), Path: dir}, Config: RepoOptions{Updater: src.Updater, ExcludeTag: src.ExcludeTag}})
 	}
-
-	envFilenames := []string{}
-	if len(dataSource.EnvFilenames) != 0 {
-		envFilenames = dataSource.EnvFilenames
+	if len(cm.Repos) == 0 {
+		return nil, errors.New("configuration contains no Git sources applicable to this command")
 	}
-
-	return &ConfigManager{
-		ConfigPath:   configPath,
-		Repos:        repos,
-		Services:     dataSource.Services,
-		EnvFilenames: envFilenames,
-		TagPattern:   dataSource.TagPattern,
-	}, dataSource.Validate()
-}
-
-func hydrateRepoConfig(name string, prefixPath string, rootRefs string, repoData ConfigRepo) (LiveRepo, error) {
-	repoPath := prefixPath
-	if repoData.Path != "" {
-		repoPath = path.Join(repoPath, repoData.Path)
-	} else {
-		repoPath = path.Join(repoPath, name)
-	}
-
-	remote, err := git.NewRemoteGitUrl(repoData.Remote)
-	if err != nil {
-		return LiveRepo{}, err
-	}
-
-	refs := "main"
-	if rootRefs != "" {
-		refs = rootRefs
-	}
-	if repoData.Refs != "" {
-		refs = repoData.Refs
-	}
-
-	return LiveRepo{
-		Name: name,
-		GitConfig: git.Repo{
-			Path:   repoPath,
-			Remote: remote,
-			Refs:   git.BranchName(refs),
-		},
-		Config: repoData,
-	}, nil
+	return cm, nil
 }

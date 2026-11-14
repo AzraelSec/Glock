@@ -1,138 +1,105 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
-
-	"github.com/AzraelSec/glock/internal/serializer"
 )
 
-const completeConfigYamlSrc = `
-root_path: /tmp/
-root_main_stream: master
-tag_template: v{.Now.Format("02-01-06.150405")}
-env_filenames:
-  - ".env.defaults"
-  - ".env.something"
-services:
-  - name: "virtual1"
-    cmd: "echo start"
-    dispose: "echo stop"
-  - name: "virtual2"
-    cmd: "echo start two"
-    dispose: "echo stop two"
-repos:
-  first:
-    remote: git@github.com:AzraelSec/first.git
-    main_stream: main
-    rel_path: something
-  second:
-    remote: git@github.com:AzraelSec/second.git
+func TestRepositoryCatalog(t *testing.T) {
+	raw := []byte(`version: 2
+tag_pattern: 'v1'
+sources:
+  z:
+    type: github
+    url: git@github.com:org/z.git
+    head: develop
+    path: custom
+    updater: _ignore_
     exclude_tag: true
-`
-
-const completeConfigJsonSrc = `{
-	"root_path": "/tmp/",
-	"root_main_stream": "master",
-	"env_filenames": [
-  ".env.defaults",
-  ".env.something"
-	],
-	"repos": {
-		"first": {
-			"remote": "git@github.com:AzraelSec/first.git",
-			"main_stream": "main",
-			"rel_path": "something"
-		},
-		"second": {
-			"remote": "git@github.com:AzraelSec/second.git",
-			"exclude_tag": true
-		}
-	}
-}
-`
-
-func TestNewConfigManagerYaml(t *testing.T) {
-	cm, err := NewConfigManager("/", []byte(completeConfigYamlSrc), serializer.NewYamlDecoder())
+  a:
+    type: github
+    url: git@github.com:org/a.git
+    head: main
+    path: a
+  asset:
+    type: http
+    path: assets
+    url: https://example.com/archive
+components:
+  first: {source: z, run: echo first}
+  second: {source: z, run: echo second}
+`)
+	cfg, err := ParseConfigV2(raw)
 	if err != nil {
-		t.Errorf("got error: %v", err)
+		t.Fatal(err)
 	}
-
-	repoTests := []struct {
-		remote      string
-		path        string
-		key         string
-		main_stream string
-		exclude     bool
-	}{
-		{
-			key:         "first",
-			remote:      "git@github.com:AzraelSec/first.git",
-			main_stream: "main",
-			path:        "something",
-		},
-		{
-			key:     "second",
-			remote:  "git@github.com:AzraelSec/second.git",
-			exclude: true,
-		},
+	root := t.TempDir()
+	cm, err := RepositoryCatalog(&Project{Config: cfg, Root: root, Path: filepath.Join(root, "glock.yml")})
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	for idx, tt := range repoTests {
-		repo := cm.Repos[idx]
-		if repo.Config.Remote != tt.remote {
-			t.Errorf("wanted: %s, got: %s", tt.remote, repo.Config.Remote)
-		}
-		if repo.Config.Path != tt.path {
-			t.Errorf("wanted: %s, got: %s", tt.path, repo.Config.Path)
-		}
-		if repo.Config.Refs != tt.main_stream {
-			t.Errorf("wanted: %s, got: %s", tt.main_stream, repo.Config.Refs)
-		}
-		if repo.Config.ExcludeTag != tt.exclude {
-			t.Errorf("wanted: %t, got: %t", tt.exclude, repo.Config.ExcludeTag)
-		}
+	if len(cm.Repos) != 2 || cm.Repos[0].Name != "a" || cm.Repos[1].Name != "z" {
+		t.Fatalf("catalog: %+v", cm.Repos)
+	}
+	if cm.Repos[0].GitConfig.Path != filepath.Join(root, "a") || cm.Repos[1].GitConfig.Path != filepath.Join(root, "custom") {
+		t.Fatal(cm.Repos)
+	}
+	if cm.Repos[1].GitConfig.Refs != "develop" || cm.Repos[1].Config.Updater != "_ignore_" || !cm.Repos[1].Config.ExcludeTag || cm.TagPattern != "v1" {
+		t.Fatal(cm)
 	}
 }
 
-func TestNewConfigManagerJson(t *testing.T) {
-	cm, err := NewConfigManager("/", []byte(completeConfigJsonSrc), serializer.NewJsonDecoder())
+func TestLoadFileRejectsV1(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "glock.yml")
+	raw := []byte("repos: {}\n")
+	if err := os.WriteFile(p, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadFile(p)
+	if err == nil || !strings.Contains(err.Error(), "config migrate") {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(p)
+	if string(got) != string(raw) {
+		t.Fatal("input changed")
+	}
+}
+
+func TestNoApplicableGitSources(t *testing.T) {
+	cfg, err := ParseConfigV2([]byte("version: 2\ncomponents: {local: {run: echo hello}}\n"))
 	if err != nil {
-		t.Errorf("got error: %v", err)
+		t.Fatal(err)
 	}
-
-	repoTests := []struct {
-		remote      string
-		path        string
-		key         string
-		main_stream string
-		exclude     bool
-	}{
-		{
-			key:         "first",
-			remote:      "git@github.com:AzraelSec/first.git",
-			main_stream: "main",
-			path:        "something",
-		},
-		{
-			key:     "second",
-			remote:  "git@github.com:AzraelSec/second.git",
-			exclude: true,
-		},
+	if _, err = RepositoryCatalog(&Project{Config: cfg, Root: t.TempDir()}); err == nil {
+		t.Fatal("expected no Git sources error")
 	}
+}
 
-	for idx, tt := range repoTests {
-		repo := cm.Repos[idx]
-		if repo.Config.Remote != tt.remote {
-			t.Errorf("wanted: %s, got: %s", tt.remote, repo.Config.Remote)
-		}
-		if repo.Config.Path != tt.path {
-			t.Errorf("wanted: %s, got: %s", tt.path, repo.Config.Path)
-		}
-		if repo.Config.Refs != tt.main_stream {
-			t.Errorf("wanted: %s, got: %s", tt.main_stream, repo.Config.Refs)
-		}
-		if repo.Config.ExcludeTag != tt.exclude {
-			t.Errorf("wanted: %t, got: %t", tt.exclude, repo.Config.ExcludeTag)
-		}
+func TestRemoteSourcePathAllowsSymlinkOutsideProject(t *testing.T) {
+	root := t.TempDir()
+	external := t.TempDir()
+	if err := os.Symlink(external, filepath.Join(root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	raw := []byte("version: 2\nsources: {repo: {type: github, path: linked/repo, url: 'git@github.com:org/repo.git', head: main}}\n")
+	cfg, err := ParseConfigV2(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cm, err := RepositoryCatalog(&Project{Config: cfg, Root: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cm.Repos[0].GitConfig.Path; got != filepath.Join(root, "linked", "repo") {
+		t.Fatal(got)
+	}
+	if err := os.Mkdir(filepath.Join(external, "repo"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	got, err := filepath.EvalSymlinks(cm.Repos[0].GitConfig.Path)
+	if err != nil || got != filepath.Join(external, "repo") {
+		t.Fatalf("%s: %v", got, err)
 	}
 }

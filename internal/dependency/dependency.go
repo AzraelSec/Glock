@@ -7,22 +7,14 @@ import (
 	"path"
 
 	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dir"
 	"github.com/AzraelSec/glock/internal/git"
-	"github.com/AzraelSec/glock/internal/serializer"
 )
 
-type Manager struct {
-	configPathEnv      string
-	configFileName     string
-	maxConfigFileDepth int8
-}
+type Manager struct{}
 
-func NewManager(configPathEnv, configFileName string, maxConfigFileDepth int8) *Manager {
-	return &Manager{
-		configPathEnv:      configPathEnv,
-		configFileName:     configFileName,
-		maxConfigFileDepth: maxConfigFileDepth,
-	}
+func NewManager() *Manager {
+	return &Manager{}
 }
 
 func (*Manager) GetGit() (git.Git, error) {
@@ -31,26 +23,26 @@ func (*Manager) GetGit() (git.Git, error) {
 
 func (dm *Manager) ConfigManagerFromFile(dir string) (*config.ConfigManager, error) {
 	if _, err := os.Stat(dir); err != nil {
-		return nil, fmt.Errorf("impossible to identify a valid %s config file", dm.configPathEnv)
+		return nil, fmt.Errorf("impossible to identify a valid %s config file", config.ConfigPathEnv)
 	}
-	return loadConfigManager(path.Join(dir, dm.configFileName))
+	return loadConfigManager(path.Join(dir, config.ConfigFileName))
 }
 
 func (dm *Manager) GetConfigManager() (*config.ConfigManager, error) {
-	cfPath, err := dm.getConfigFilePath()
+	cfPath, err := dm.GetConfigFilePath()
 	if err != nil {
-		return nil, fmt.Errorf("impossible to identify a valid %s config file", dm.configPathEnv)
+		return nil, fmt.Errorf("impossible to identify a valid %s config file", config.ConfigPathEnv)
 	}
 
 	cm, err := loadConfigManager(cfPath)
 	if err != nil {
-		return nil, fmt.Errorf("impossible to find a valid %s nearby configuration file.\nDetails: %v", dm.configFileName, err)
+		return nil, fmt.Errorf("impossible to find a valid %s nearby configuration file.\nDetails: %v", config.ConfigFileName, err)
 	}
 	return cm, nil
 }
 
-func (dm *Manager) getConfigFilePath() (string, error) {
-	if v, exists := os.LookupEnv(dm.configPathEnv); exists {
+func (dm *Manager) GetConfigFilePath() (string, error) {
+	if v, exists := os.LookupEnv(config.ConfigPathEnv); exists {
 		return v, nil
 	}
 
@@ -59,7 +51,7 @@ func (dm *Manager) getConfigFilePath() (string, error) {
 		return "", errors.New("impossible to find the current directory")
 	}
 
-	configPath, err := dm.findNearestConfigFile(wd, dm.maxConfigFileDepth)
+	configPath, err := dir.FindNearestFile(wd, config.MaxConfigFileDepth, config.ConfigFileName)
 	if err != nil {
 		return "", errors.New("no configuration file found")
 	}
@@ -67,24 +59,17 @@ func (dm *Manager) getConfigFilePath() (string, error) {
 }
 
 func loadConfigManager(configPath string) (*config.ConfigManager, error) {
-	rawConfig, err := os.ReadFile(configPath)
+	project, err := config.LoadFile(configPath)
 	if err != nil {
 		return nil, err
 	}
-
-	return config.NewConfigManager(configPath, rawConfig, serializer.NewYamlDecoder())
+	return config.RepositoryCatalog(project)
 }
 
-func (dm *Manager) findNearestConfigFile(currentPath string, hop int8) (string, error) {
-	_, err := os.Stat(path.Join(currentPath, dm.configFileName))
-	if err == nil {
-		return path.Join(currentPath, dm.configFileName), nil
+func (dm *Manager) LoadProject() (*config.Project, error) {
+	path, err := dm.GetConfigFilePath()
+	if err != nil {
+		return nil, err
 	}
-
-	if currentPath == "/" || hop == 0 {
-		return "", fmt.Errorf("no %s file found", dm.configFileName)
-	}
-
-	parentDir := path.Dir(currentPath)
-	return dm.findNearestConfigFile(parentDir, hop-1)
+	return config.LoadFile(path)
 }
