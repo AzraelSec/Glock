@@ -22,8 +22,8 @@ Glock is a powerful open-source project developed in Go, designed to assist team
 > Please keep in mind that Glock is still under active development
 > and therefore backward compatibility is not guaranteed and breaking changes are expected.
 
-> [!NOTE]
-> There is still no documentation on Glock configuration. It'll be produced and published as soon as possible.
+See [glock.example.yml](glock.example.yml) for configuration and
+[architecture.md](architecture.md) for runtime behavior.
 
 ## Key Features
 
@@ -72,6 +72,72 @@ To get started with Glock, follow these simple steps:
 <p align="center">
    <img alt="help preview" src="/assets/help.png" width="600">
 </p>
+
+## Configuration and migration
+
+All commands now require v2 `glock.yml`. Config discovery still uses
+`GLOCK_CONFIG_PATH` or the nearest parent `glock.yml` (up to 20 levels).
+The directory containing the file is the project root. Git sources use `url`,
+`head`, and a required `path`. Remote source paths are relative to the project
+root and cannot contain `..`; a Git path cannot be the project root. This is a
+lexical rule: symlinks can point outside the project, and paths are not a
+security boundary.
+Filesystem source paths identify existing directories directly and can be
+absolute or relative to the project root. Components and their hooks run there.
+Existing v2 configurations using `out` must be updated to `path`; the migration
+command only converts v1 files.
+`status`, `switch`, `reset`, `init`, `update`, and `tag` operate once per Git
+source, ignoring non-Git sources. Acquisition for other source types is not
+implemented by `init`.
+
+```sh
+glock config validate
+glock start
+glock start --repos backend
+```
+
+`start` keeps tagged terminal output and now runs the engine lifecycle: startup
+hooks are awaited, workspaces/components are not readiness dependency graphs,
+and shutdown awaits cleanup. There is no fixed five-second service delay.
+Shell environment values override dotenv files. `--repos` selects components
+referencing the named Git sources; without a filter, sourceless services run too.
+After a failed `init remote`, the downloaded config and successful clones are
+retained. Fix the error and run `glock init local` in the config directory (or
+set `GLOCK_CONFIG_PATH` to that config). Existing checkouts are skipped only
+when their root, origin URL, checked-out commit, and readable Git index are
+verified; other existing destinations are reported without modification. A
+missing index may indicate an incomplete checkout and requires manual review.
+
+Git sources support `updater` and `exclude_tag`; `tag_pattern` remains top-level.
+The existing update, status, switch, and tag interfaces remain available.
+
+V1 is rejected immediately by ordinary commands. To migrate, keep a backup and
+point discovery to that backup when the original occupies the output path:
+
+```sh
+# First move the old glock.yml to glock.v1.yml in the same directory.
+GLOCK_CONFIG_PATH=/absolute/project/glock.v1.yml glock config migrate --output /absolute/project/glock.yml
+glock config validate
+```
+
+Migration never edits its input or overwrites a destination. Output must be
+named `glock.yml` in the old effective root. An absolute v1 `root_path` is
+used directly; if `root_path` was relative, provide `--v1-root /absolute/path`
+with the effective root used when running the old commands. V1 resolved that
+value relative to the working directory, so it cannot be inferred from the
+configuration file alone. Review the converted configuration
+before starting: engine cleanup and startup ordering differ from v1.
+
+Repositories become Git sources. A single `on_start` becomes a component;
+`on_stop` becomes a shutdown task, and dotenv filenames follow the component.
+Services become sourceless components with cleanup tasks. Updater overrides,
+tag exclusions, branches, and repository directories are preserved.
+
+Automatic migration refuses multiple start commands, shutdown-only entries,
+unknown fields (including misspelled legacy options), paths outside the project root, and Git paths targeting the project root. It also refuses services whose old execution directory differs
+from the new project root. It reports blockers without writing output; convert
+these entries manually using the example and architectural reference. V1
+parsing is retained only for this migration command.
 
 ## License
 
