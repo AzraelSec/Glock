@@ -1,10 +1,10 @@
 package commands
 
 import (
-	"github.com/AzraelSec/glock/cmd/cli/commands/config_cmd"
 	"io"
 	"os"
 
+	"github.com/AzraelSec/glock/cmd/cli/commands/config_cmd"
 	"github.com/AzraelSec/glock/cmd/cli/commands/init_cmd"
 	"github.com/AzraelSec/glock/cmd/cli/commands/status"
 	switchcmd "github.com/AzraelSec/glock/cmd/cli/commands/switch_cmd"
@@ -21,6 +21,7 @@ const (
 	MAX_CONFIG_FILE_DEPTH = 20
 )
 
+// Version is set by the linker for Make and GoReleaser builds.
 var Version = "dev"
 
 var rootCmd = &cobra.Command{

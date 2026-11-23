@@ -23,5 +23,6 @@ go.work
 .env
 
 bin/
+/glock
 
 dist/

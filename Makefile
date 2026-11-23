@@ -2,8 +2,13 @@ include .env
 
 .PHONY: test build install run clean compile release
 
+# Use the same linker version field as GoReleaser.
+DEV_VERSION := $(shell if revision=$$(git rev-parse --short=12 HEAD 2>/dev/null); then \
+	if test -n "$$(git status --porcelain)"; then revision="$$revision.dirty"; fi; \
+	printf 'dev+%s' "$$revision"; else printf 'dev'; fi)
+BUILD_VERSION := $(or $(VERSION),$(DEV_VERSION))
 VERSION ?= $(patsubst v%,%,$(shell git describe --tags --exact-match 2>/dev/null || echo dev))
-LD_FLAGS := -X github.com/AzraelSec/glock/cmd/cli/commands.Version=$(VERSION)
+LD_FLAGS := -X github.com/AzraelSec/glock/cmd/cli/commands.Version=$(BUILD_VERSION)
 RELEASE_TAG := $(if $(filter v%,$(VERSION)),$(VERSION),v$(VERSION))
 
 test:
