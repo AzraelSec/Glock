@@ -354,8 +354,7 @@ func TestPairedStepsCancelAndCleanupOnce(t *testing.T) {
 	waitLifecycle(t, func() bool { _, err := os.Stat(filepath.Join(dir, "entered")); return err == nil })
 	var wg sync.WaitGroup
 	for range 3 {
-		wg.Add(1)
-		go func() { defer wg.Done(); _ = o.Stop() }()
+		wg.Go(func() { _ = o.Stop() })
 	}
 	wg.Wait()
 	if err := <-started; err == nil {

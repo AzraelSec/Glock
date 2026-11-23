@@ -11,22 +11,18 @@ func TestMemoryOutput_ConcurrentAppendAndLines(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Writer goroutine: append 100 lines
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 100; i++ {
+	wg.Go(func() {
+		for range 100 {
 			mo.Append("line")
 		}
-	}()
+	})
 
 	// Reader goroutine: read Lines() 100 times
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 100; i++ {
+	wg.Go(func() {
+		for range 100 {
 			_ = mo.Lines()
 		}
-	}()
+	})
 
 	wg.Wait()
 
@@ -41,21 +37,17 @@ func TestMemoryOutput_ConcurrentAppendAndLen(t *testing.T) {
 
 	var wg sync.WaitGroup
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 100; i++ {
+	wg.Go(func() {
+		for range 100 {
 			mo.Append("line")
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < 100; i++ {
+	wg.Go(func() {
+		for range 100 {
 			_ = mo.Len()
 		}
-	}()
+	})
 
 	wg.Wait()
 
@@ -160,13 +152,13 @@ func TestRingOutput_ConcurrentAppendAndRead(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			r.Append("line")
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			_ = r.LinesRange(0, 10)
 			_ = r.Lines()
 		}

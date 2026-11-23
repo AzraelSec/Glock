@@ -110,14 +110,14 @@ func TestSlowFrontendRetainsResultsAndCoalescesState(t *testing.T) {
 func TestShutdownLaneCancelsSaturatedWorkers(t *testing.T) {
 	dir := t.TempDir()
 	cfg := &config.ConfigV2{Components: make(map[string]config.Component), Tasks: map[string]config.Task{"setup": {Run: "touch entered; sleep 60"}}}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		cfg.Components[fmt.Sprintf("svc-%d", i)] = config.Component{Run: "touch main-started", On: &config.On{Startup: []string{"setup"}}}
 	}
 	o := orchestrator.NewOrchestratorWithOptions(cfg, dir, orchestrator.Options{StopTimeout: 30 * time.Millisecond})
 	s := NewSession(o)
 	defer s.Close()
 	nextNotification(t, s)
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if err := s.Send(context.Background(), runtime.Command{ID: uint64(i + 1), Action: runtime.StartComponent, Target: fmt.Sprintf("svc-%d", i)}); err != nil {
 			t.Fatal(err)
 		}

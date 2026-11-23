@@ -60,7 +60,7 @@ on: {startup: [app]}
 	if len(lines) != 12003 {
 		t.Fatalf("lost output without warning: %d", len(lines))
 	}
-	for i := 0; i < 12000; i++ {
+	for i := range 12000 {
 		if lines[i+2] != fmt.Sprintf("[api] line-%d", i) {
 			t.Fatalf("line %d: %q", i, lines[i+2])
 		}

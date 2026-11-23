@@ -44,7 +44,7 @@ func TestBus_Filter(t *testing.T) {
 	b.Publish(Event{Name: ComponentStarted, Component: "worker"})
 
 	// allSub should receive both
-	for i := 0; i < 2; i++ {
+	for i := range 2 {
 		select {
 		case <-allSub.Events():
 		case <-time.After(2 * time.Second):
@@ -213,12 +213,12 @@ func TestBus_CancelDuringDeliver(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for i := 0; i < 500; i++ {
+		for range 500 {
 			b.Publish(Event{Name: ComponentStarted, Component: "api"})
 		}
 	}()
 
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		sub := b.Subscribe(func(e Event) bool { return true })
 		// Drain a couple of events then cancel mid-stream.
 		select {
@@ -237,7 +237,7 @@ func TestBus_PublishAfterClose(t *testing.T) {
 	b.Close()
 
 	// Must not panic.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		b.Publish(Event{Name: ComponentStarted})
 	}
 }

@@ -314,13 +314,11 @@ func (o *Orchestrator) Stop() error {
 			if !o.needsCleanup(name) {
 				continue
 			}
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+			wg.Go(func() {
 				sem <- struct{}{}
 				defer func() { <-sem }()
 				_ = o.stopComponent(name) // errors are retained by the cleanup path
-			}()
+			})
 		}
 		wg.Wait()
 		o.lifecycleMu.Lock()
