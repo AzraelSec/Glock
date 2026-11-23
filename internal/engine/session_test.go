@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -246,5 +248,26 @@ on:
 	}
 	if _, err := os.Stat(filepath.Join(dir, "cleaned")); err != nil {
 		t.Fatal("interrupted initialization did not clean up", err)
+	}
+}
+
+func TestSnapshotOmitsEnvironmentValues(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte("PRIVATE_SENTINEL=supersecretvalue\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.ConfigV2{Components: map[string]config.Component{"svc": {Run: "sleep 10", EnvFilenames: []string{".env"}}}}
+	o := orchestrator.NewOrchestrator(cfg, dir)
+	if err := o.StartComponent("svc"); err != nil {
+		t.Fatal(err)
+	}
+	s := NewSession(o)
+	defer s.Close()
+	data, err := json.Marshal(s.snapshot(1))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(data, []byte("supersecretvalue")) || bytes.Contains(data, []byte("PRIVATE_SENTINEL")) {
+		t.Fatalf("environment leaked: %s", data)
 	}
 }

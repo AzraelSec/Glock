@@ -99,6 +99,29 @@ glock start --repos backend
 `start` keeps tagged terminal output and now runs the engine lifecycle: startup
 hooks are awaited, workspaces/components are not readiness dependency graphs,
 and shutdown awaits cleanup. There is no fixed five-second service delay.
+A failed component is reported while other components continue; use `start
+--fail-fast` to stop the stack on the first failure. `start` exits nonzero if
+any component failed. Output uses bounded queues: slow consumers can lose
+fragments, and Glock reports loss or a truncated pipe drain on shutdown. Retained
+snapshot history is bounded independently and exposes its eviction count.
+
+Existing `on.startup` and `on.shutdown` lists retain their original behavior,
+including running the shutdown list after a startup failure. For paired
+cleanup, use `on.steps` instead (the two forms cannot be mixed in one block):
+
+```yaml
+on:
+  steps:
+    - startup: start-database
+      cleanup: stop-database
+    - startup: start-mail
+      cleanup: stop-mail
+```
+
+Each successful step registers its cleanup; registered cleanups run once in
+reverse order. A failed step must clean up its own partial effects. Steps use
+task keys and are supported at application and component scope.
+
 Shell environment values override dotenv files. `--repos` selects components
 referencing the named Git sources; without a filter, sourceless services run too.
 After a failed `init remote`, the downloaded config and successful clones are

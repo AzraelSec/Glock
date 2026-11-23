@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AzraelSec/glock/internal/config"
@@ -19,7 +20,10 @@ import (
 
 // Session owns one frontend connection and finalizes its attached engine.
 // Frontend selections and read models stay separate from runtime state.
+type outputStats struct{ dropped, truncated atomic.Uint64 }
+
 type Session struct {
+	stats          *outputStats
 	stream         chan process.OutputLine
 	streamCancel   context.CancelFunc
 	orch           *orchestrator.Orchestrator
@@ -40,8 +44,11 @@ type Session struct {
 
 // NewSession attaches a frontend to an initialized engine.
 func NewSession(orch *orchestrator.Orchestrator) *Session {
+	return newSession(orch, nil, nil, nil)
+}
+func newSession(orch *orchestrator.Orchestrator, stats *outputStats, stream chan process.OutputLine, streamCancel context.CancelFunc) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Session{orch: orch, ctx: ctx, cancel: cancel,
+	s := &Session{orch: orch, ctx: ctx, cancel: cancel, stats: stats, stream: stream, streamCancel: streamCancel,
 		commands: make(chan runtime.Command, 64), shutdown: make(chan runtime.Command, 1),
 		results: make(chan runtime.CommandResult, 64), snapshots: make(chan *runtime.Snapshot, 1),
 		events: make(chan runtime.Notification),
@@ -213,7 +220,7 @@ func (s *Session) deliver(initial *runtime.Snapshot) {
 }
 
 func (s *Session) snapshot(sequence uint64) *runtime.Snapshot {
-	out := &runtime.Snapshot{Sequence: sequence, Workspaces: s.orch.Workspaces()}
+	out := &runtime.Snapshot{Sequence: sequence, Workspaces: s.orch.Workspaces(), OutputLoss: s.OutputLoss()}
 	for i := range out.Workspaces {
 		out.Workspaces[i].Components = slices.Clone(out.Workspaces[i].Components)
 	}
@@ -229,17 +236,24 @@ func (s *Session) snapshot(sequence uint64) *runtime.Snapshot {
 		definition.EnvFilenames = slices.Clone(definition.EnvFilenames)
 		cp := runtime.ComponentSnapshot{Definition: definition}
 		if p := entry.Process; p != nil {
-			cp.Process = &runtime.ProcessSnapshot{State: p.State, PID: p.PID, Env: slices.Clone(p.Env)}
+			cp.Process = &runtime.ProcessSnapshot{State: p.State, PID: p.PID}
+			if reader, ok := p.Output.(interface{ Truncated() bool }); ok {
+				cp.Process.OutputTruncated = reader.Truncated()
+			}
 			if target.Kind == runtime.ComponentOutput && target.Name == definition.Name && p.Output != nil {
-				out.Output.Lines = p.Output.Lines()
+				copyRetainedOutput(&out.Output, p.Output)
 			}
 		}
 		out.Components = append(out.Components, cp)
 	}
 	for _, t := range s.orch.Tasks() {
-		out.Tasks = append(out.Tasks, runtime.TaskSnapshot{Name: t.Name, Description: t.Description, Command: t.Command, ExecDir: t.ExecDir, Env: slices.Clone(t.Env), State: t.State})
+		taskSnapshot := runtime.TaskSnapshot{Name: t.Name, Description: t.Description, Command: t.Command, ExecDir: t.ExecDir, State: t.State}
+		if reader, ok := t.Output.(interface{ Truncated() bool }); ok {
+			taskSnapshot.OutputTruncated = reader.Truncated()
+		}
+		out.Tasks = append(out.Tasks, taskSnapshot)
 		if target.Kind == runtime.TaskOutput && target.Name == t.Name && t.Output != nil {
-			out.Output.Lines = t.Output.Lines()
+			copyRetainedOutput(&out.Output, t.Output)
 		}
 	}
 	slices.SortFunc(out.Tasks, func(a, b runtime.TaskSnapshot) int { return strings.Compare(a.Name, b.Name) })
@@ -247,6 +261,20 @@ func (s *Session) snapshot(sequence uint64) *runtime.Snapshot {
 		out.Events = append(out.Events, cloneEvent(e))
 	}
 	return out
+}
+
+func copyRetainedOutput(snapshot *runtime.OutputSnapshot, output process.Output) {
+	if reader, ok := output.(interface {
+		RetainedOutput() ([]process.OutputFragment, uint64, bool)
+	}); ok {
+		snapshot.Fragments, snapshot.Evicted, snapshot.Truncated = reader.RetainedOutput()
+		snapshot.Lines = make([]string, len(snapshot.Fragments))
+		for i, fragment := range snapshot.Fragments {
+			snapshot.Lines[i] = fragment.Text
+		}
+		return
+	}
+	snapshot.Lines = output.Lines()
 }
 
 // Diagnostic payloads currently consist entirely of value fields. Copy each
@@ -282,21 +310,35 @@ func cloneEvent(e event.Event) event.Event {
 }
 
 // OpenProject returns an uninitialized streaming session. The caller starts
-// draining Output and Events before sending Initialize, so startup hook output
-// is subject to the same bounded backpressure as component output.
+// draining Output and Events before sending Initialize. Output uses a bounded
+// queue and records dropped fragments instead of blocking producers.
 func OpenProject(project *config.Project) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
-	lines := make(chan process.OutputLine, 256)
+	lines := make(chan process.OutputLine, 4096)
+	stats := &outputStats{}
 	sink := func(line process.OutputLine) {
+		if line.Truncated {
+			stats.truncated.Add(1)
+		}
+		select {
+		case <-ctx.Done():
+			stats.dropped.Add(1)
+			return
+		default:
+		}
 		select {
 		case lines <- line:
-		case <-ctx.Done():
+		default:
+			stats.dropped.Add(1)
 		}
 	}
 	orch := orchestrator.NewOrchestratorWithOptions(project.Config, project.Root, orchestrator.Options{Output: sink})
-	s := NewSession(orch)
-	s.stream = lines
-	s.streamCancel = cancel
-	return s
+	return newSession(orch, stats, lines, cancel)
 }
 func (s *Session) Output() <-chan process.OutputLine { return s.stream }
+func (s *Session) OutputLoss() runtime.OutputLoss {
+	if s.stats == nil {
+		return runtime.OutputLoss{}
+	}
+	return runtime.OutputLoss{DroppedChunks: s.stats.dropped.Load(), TruncatedDrains: s.stats.truncated.Load()}
+}

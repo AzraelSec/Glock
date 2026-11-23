@@ -177,3 +177,18 @@ func TestRingOutput_ConcurrentAppendAndRead(t *testing.T) {
 		t.Fatalf("expected len 50 (capped), got %d", r.Len())
 	}
 }
+
+func TestRingOutputTracksFragmentsAndEviction(t *testing.T) {
+	r := NewRingOutput(2)
+	r.AppendStream("stdout", "first", true, false)
+	r.AppendStream("stdout", "last", false, true)
+	r.AppendStream("stderr", "error", false, false)
+	f := r.Fragments()
+	if len(f) != 2 || f[0].Text != "last" || !f[0].Newline || f[1].Stream != "stderr" || f[1].Newline || r.Evicted() != 1 {
+		t.Fatalf("fragments=%+v evicted=%d", f, r.Evicted())
+	}
+	r.Clear()
+	if r.Evicted() != 0 || len(r.Fragments()) != 0 {
+		t.Fatal("clear did not reset output history")
+	}
+}

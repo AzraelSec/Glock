@@ -174,7 +174,7 @@ func (c *Client) Components(ws string) []runtime.ComponentEntry {
 		definition.EnvFilenames = slices.Clone(definition.EnvFilenames)
 		cp := runtime.ComponentEntry{Component: definition}
 		if p := entry.Process; p != nil {
-			cp.Process = &process.Process{Component: definition.Name, State: p.State, PID: p.PID, Env: slices.Clone(p.Env)}
+			cp.Process = &process.Process{Component: definition.Name, State: p.State, PID: p.PID}
 			if c.snapshot.Output.Target == (runtime.OutputTarget{Kind: runtime.ComponentOutput, Name: definition.Name}) {
 				cp.Process.Output = c.output
 			}
@@ -188,7 +188,7 @@ func (c *Client) Tasks() []task.Task {
 	defer c.mu.RUnlock()
 	out := make([]task.Task, 0, len(c.snapshot.Tasks))
 	for _, t := range c.snapshot.Tasks {
-		cp := task.Task{Name: t.Name, Description: t.Description, Command: t.Command, ExecDir: t.ExecDir, Env: slices.Clone(t.Env), State: t.State}
+		cp := task.Task{Name: t.Name, Description: t.Description, Command: t.Command, ExecDir: t.ExecDir, State: t.State}
 		if c.snapshot.Output.Target == (runtime.OutputTarget{Kind: runtime.TaskOutput, Name: t.Name}) {
 			cp.Output = c.output
 		}

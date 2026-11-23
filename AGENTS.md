@@ -29,7 +29,9 @@
 ## Runtime Quirks
 - `start` uses engine sessions, awaited hooks, and component dotenv files; host environment values win.
 - `start --repos repoA --repos repoB` filters components by Git-source key.
-- No filter starts all components, including sourceless services.
+- No filter starts all components, including sourceless services. Failed components do not stop others by default; `--fail-fast` stops the stack.
+- Existing startup/shutdown lists retain their behavior; `on.steps` pairs successful startup tasks with reverse-order cleanup.
+- Live output queues and snapshot history are bounded and report output loss; environment values are excluded from frontend snapshots.
 - `switch` and `reset` refuse dirty repos unless `switch --force` is used.
 - `tag` requires `tag_pattern`; repos with `exclude_tag: true` are skipped.
 - `tag --skip-push` avoids pushing; normal push mode fails when a repo has multiple remotes.

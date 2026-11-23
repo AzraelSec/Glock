@@ -84,11 +84,19 @@ var _ Output = (*MemoryOutput)(nil)
 // buffer is full, the oldest lines are dropped to make room for new
 // ones. It has O(1) insertion with zero steady-state allocation and is
 // safe for concurrent use.
+type OutputFragment struct {
+	Stream, Text     string
+	Partial, Newline bool
+}
+
 type RingOutput struct {
-	mu    sync.Mutex
-	buf   []string
-	head  int // index of the oldest line
-	count int
+	mu        sync.Mutex
+	buf       []string
+	fragments []OutputFragment
+	head      int // index of the oldest line
+	count     int
+	evicted   uint64
+	truncated bool
 }
 
 // NewRingOutput returns a RingOutput retaining up to capacity lines.
@@ -97,19 +105,43 @@ func NewRingOutput(capacity int) *RingOutput {
 	if capacity <= 0 {
 		capacity = DefaultOutputCapacity
 	}
-	return &RingOutput{buf: make([]string, capacity)}
+	return &RingOutput{buf: make([]string, capacity), fragments: make([]OutputFragment, capacity)}
 }
 
-func (r *RingOutput) Append(line string) {
+func (r *RingOutput) Append(line string) { r.AppendStream("", line, false, true) }
+func (r *RingOutput) AppendStream(stream, line string, partial, newline bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	index := r.head
 	if r.count < len(r.buf) {
-		r.buf[(r.head+r.count)%len(r.buf)] = line
+		index = (r.head + r.count) % len(r.buf)
 		r.count++
-		return
+	} else {
+		r.evicted++
+		r.head = (r.head + 1) % len(r.buf)
 	}
-	r.buf[r.head] = line
-	r.head = (r.head + 1) % len(r.buf)
+	r.buf[index] = line
+	r.fragments[index] = OutputFragment{Stream: stream, Text: line, Partial: partial, Newline: newline}
+}
+func (r *RingOutput) Fragments() []OutputFragment {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]OutputFragment, 0, r.count)
+	for i := 0; i < r.count; i++ {
+		out = append(out, r.fragments[(r.head+i)%len(r.buf)])
+	}
+	return out
+}
+
+// RetainedOutput takes one consistent snapshot of fragment metadata and loss.
+func (r *RingOutput) RetainedOutput() ([]OutputFragment, uint64, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := make([]OutputFragment, 0, r.count)
+	for i := 0; i < r.count; i++ {
+		out = append(out, r.fragments[(r.head+i)%len(r.buf)])
+	}
+	return out, r.evicted, r.truncated
 }
 
 func (r *RingOutput) Lines() []string {
@@ -138,7 +170,16 @@ func (r *RingOutput) Clear() {
 	defer r.mu.Unlock()
 	r.head = 0
 	r.count = 0
+	r.evicted = 0
+	r.truncated = false
 }
+
+// Evicted reports fragments discarded from the current retained history.
+func (r *RingOutput) Evicted() uint64 { r.mu.Lock(); defer r.mu.Unlock(); return r.evicted }
+
+// ReportTruncation marks a drain deadline that closed pipes before EOF.
+func (r *RingOutput) ReportTruncation() { r.mu.Lock(); defer r.mu.Unlock(); r.truncated = true }
+func (r *RingOutput) Truncated() bool   { r.mu.Lock(); defer r.mu.Unlock(); return r.truncated }
 
 // Ensure RingOutput implements Output.
 var _ Output = (*RingOutput)(nil)

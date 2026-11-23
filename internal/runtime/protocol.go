@@ -68,25 +68,31 @@ type Notification struct {
 	Result   *CommandResult
 }
 type ProcessSnapshot struct {
-	State process.ProcessState
-	PID   int
-	Env   []string
+	OutputTruncated bool
+	State           process.ProcessState
+	PID             int
 }
 type ComponentSnapshot struct {
 	Definition component.Component
 	Process    *ProcessSnapshot
 }
 type TaskSnapshot struct {
+	OutputTruncated                     bool
 	Name, Description, Command, ExecDir string
-	Env                                 []string
 	State                               task.TaskState
 }
 type OutputSnapshot struct {
-	Revision uint64
-	Target   OutputTarget
-	Lines    []string
+	Truncated bool
+	Fragments []process.OutputFragment
+	Evicted   uint64
+	Revision  uint64
+	Target    OutputTarget
+	Lines     []string
 }
+type OutputLoss struct{ DroppedChunks, TruncatedDrains uint64 }
+
 type Snapshot struct {
+	OutputLoss OutputLoss
 	Sequence   uint64
 	Workspaces []workspace.Workspace
 	Components []ComponentSnapshot
@@ -100,9 +106,10 @@ type OutputController interface {
 	SelectOutput(OutputTarget, uint64) error
 }
 
-// StreamingSession optionally provides lossless output. Consumers must drain it
-// concurrently with Events; disconnect cancels blocked producers.
+// StreamingSession delivers bounded output fragments; loss is reflected in
+// snapshots and OutputLoss. A disconnected consumer can miss notifications.
 type StreamingSession interface {
 	Session
 	Output() <-chan process.OutputLine
+	OutputLoss() OutputLoss
 }

@@ -2,6 +2,7 @@ package process
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -123,6 +124,9 @@ func NewOSProcess(command, execDir string, env []string, output Output) (*OSProc
 		select {
 		case <-drained:
 		case <-time.After(drainGracePeriod):
+			if reporter, ok := op.output.(interface{ ReportTruncation() }); ok {
+				reporter.ReportTruncation()
+			}
 			stdout.Close()
 			stderr.Close()
 			<-drained
@@ -152,25 +156,42 @@ func NewOSProcess(command, execDir string, env []string, output Output) (*OSProc
 }
 
 // scanStream reads lines from r and appends them to op.output.
-// The scanner buffer is raised from the 64KB default so that a single
-// long line (minified JS, stack dumps) does not silently kill all
-// further output on the pipe; a read failure is surfaced as a marker
-// line instead of freezing the stream without explanation.
+// Long lines are split into bounded fragments so pipe draining continues.
+// Read failures are surfaced as marker fragments.
 func (op *OSProcess) scanStream(r io.Reader, stream string) {
-	appendLine := func(line string) {
-		if out, ok := op.output.(interface{ AppendStream(string, string) }); ok {
-			out.AppendStream(stream, line)
+	reader := bufio.NewReaderSize(r, 32*1024)
+	appendPart := func(part []byte, partial, newline bool) {
+		line := string(part)
+		if out, ok := op.output.(interface {
+			AppendStream(string, string, bool, bool)
+		}); ok {
+			out.AppendStream(stream, line, partial, newline)
 		} else {
 			op.output.Append(line)
 		}
 	}
-	scanner := bufio.NewScanner(r)
-	scanner.Buffer(make([]byte, 64*1024), 1<<20)
-	for scanner.Scan() {
-		appendLine(scanner.Text())
-	}
-	if err := scanner.Err(); err != nil {
-		appendLine(fmt.Sprintf("[glock] output read error: %v", err))
+	continuing := false
+	for {
+		part, err := reader.ReadSlice('\n')
+		if len(part) > 0 {
+			newline := part[len(part)-1] == '\n'
+			if newline {
+				part = part[:len(part)-1]
+			}
+			partial := !newline && err == bufio.ErrBufferFull
+			appendPart(part, partial, newline)
+			continuing = partial
+		} else if err == io.EOF && continuing {
+			appendPart(nil, false, false)
+			continuing = false
+		}
+		if err == nil || errors.Is(err, bufio.ErrBufferFull) {
+			continue
+		}
+		if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrClosed) {
+			appendPart([]byte(fmt.Sprintf("[glock] output read error: %v", err)), false, true)
+		}
+		return
 	}
 }
 
