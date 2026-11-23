@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
@@ -89,7 +90,8 @@ type Orchestrator struct {
 	lifecycleMu   sync.Mutex
 	stopping      bool
 	busy          map[string]bool
-	cleanup       map[string][]string
+	cleanup       map[string]cleanupState
+	appSteps      []string
 	actions       sync.WaitGroup
 	workCtx       context.Context
 	cancelWork    context.CancelFunc
@@ -98,6 +100,11 @@ type Orchestrator struct {
 	appStarted    bool
 	appCleanup    bool
 	cleanupErrors []error
+}
+
+type cleanupState struct {
+	env   []string
+	steps []string
 }
 
 // Options allow embedders and tests to override lifecycle deadlines without
@@ -141,7 +148,7 @@ func NewOrchestratorWithOptions(cfg *config.ConfigV2, rootDir string, opts Optio
 		cancelWork:  cancelWork,
 		hookTimeout: opts.HookTimeout,
 		busy:        make(map[string]bool),
-		cleanup:     make(map[string][]string),
+		cleanup:     make(map[string]cleanupState),
 		appCleanup:  true,
 	}
 
@@ -261,8 +268,16 @@ func (o *Orchestrator) Start() error {
 	o.lifecycleMu.Unlock()
 	defer func() { o.lifecycleMu.Lock(); o.appStarting = false; o.lifecycleMu.Unlock() }()
 	if o.cfg.On != nil {
-		if err := o.runHooks(o.workCtx, o.cfg.On.Startup, "", o.rootDir, nil, false); err != nil {
-			cleanupErr := o.runHooks(context.Background(), o.cfg.On.Shutdown, "", o.rootDir, nil, true)
+		if err := o.startHooks(o.workCtx, o.cfg.On, "", o.rootDir, nil, func(key string) {
+			o.lifecycleMu.Lock()
+			o.appSteps = append(o.appSteps, key)
+			o.lifecycleMu.Unlock()
+		}); err != nil {
+			o.lifecycleMu.Lock()
+			steps := append([]string(nil), o.appSteps...)
+			o.appSteps = nil
+			o.lifecycleMu.Unlock()
+			cleanupErr := o.cleanupHooks(o.cfg.On, steps, "", o.rootDir, nil)
 			o.lifecycleMu.Lock()
 			o.appCleanup = false
 			if o.stopping && cleanupErr != nil {
@@ -312,7 +327,7 @@ func (o *Orchestrator) Stop() error {
 		errs := append([]error(nil), o.cleanupErrors...)
 		o.lifecycleMu.Unlock()
 		if o.cfg.On != nil && o.appCleanup {
-			errs = append(errs, o.runHooks(context.Background(), o.cfg.On.Shutdown, "", o.rootDir, nil, true))
+			errs = append(errs, o.cleanupHooks(o.cfg.On, o.appSteps, "", o.rootDir, nil))
 		}
 		o.stopErr = errors.Join(errs...)
 		o.bus.Publish(event.Event{Name: event.ApplicationStopped})
@@ -328,6 +343,30 @@ func (o *Orchestrator) Close() error {
 		<-o.collectorDone
 	})
 	return err
+}
+
+// startHooks records compensation only after its corresponding startup succeeds.
+func (o *Orchestrator) startHooks(ctx context.Context, on *config.On, namespace, dir string, env []string, record func(string)) error {
+	if on.Steps == nil {
+		return o.runHooks(ctx, on.Startup, namespace, dir, env, false)
+	}
+	for _, step := range on.Steps {
+		if err := o.runHooks(ctx, []string{step.Startup}, namespace, dir, env, false); err != nil {
+			return err
+		}
+		if step.Cleanup != "" {
+			record(step.Cleanup)
+		}
+	}
+	return nil
+}
+func (o *Orchestrator) cleanupHooks(on *config.On, steps []string, namespace, dir string, env []string) error {
+	if on.Steps == nil {
+		return o.runHooks(context.Background(), on.Shutdown, namespace, dir, env, true)
+	}
+	keys := append([]string(nil), steps...)
+	slices.Reverse(keys)
+	return o.runHooks(context.Background(), keys, namespace, dir, env, true)
 }
 
 // runHooks awaits each execution. Cleanup continues after failures; startup

@@ -3,9 +3,11 @@ package orchestrator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -293,5 +295,75 @@ func TestShutdownRetainsRollbackErrorsFromCancelledStartup(t *testing.T) {
 	}
 	if err := receiveAction(t, result); !errors.Is(err, context.Canceled) || !strings.Contains(err.Error(), "37") {
 		t.Fatalf("startup/rollback errors lost: %v", err)
+	}
+}
+
+func TestPairedApplicationRollbackAndShutdown(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			dir := t.TempDir()
+			second := "echo two >> order"
+			if fail {
+				second = "exit 3"
+			}
+			cfg := &config.ConfigV2{Tasks: map[string]config.Task{"one": {Run: "echo one >> order"}, "two": {Run: second}, "undo-one": {Run: "echo undo-one >> order"}, "undo-two": {Run: "echo undo-two >> order"}}, On: &config.On{Steps: []config.HookStep{{Startup: "one", Cleanup: "undo-one"}, {Startup: "two", Cleanup: "undo-two"}}}}
+			o := NewOrchestrator(cfg, dir)
+			err := o.Start()
+			if (err != nil) != fail {
+				t.Fatalf("start: %v", err)
+			}
+			_ = o.Stop()
+			_ = o.Close()
+			data, err := os.ReadFile(filepath.Join(dir, "order"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := "one\ntwo\nundo-two\nundo-one\n"
+			if fail {
+				want = "one\nundo-one\n"
+			}
+			if string(data) != want {
+				t.Fatalf("got %q want %q", data, want)
+			}
+		})
+	}
+}
+
+func TestPairedComponentRollback(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.ConfigV2{Tasks: map[string]config.Task{"up": {Run: "echo up >> order"}, "fail": {Run: "exit 2"}, "down": {Run: "echo down >> order"}, "never": {Run: "echo never >> order"}}, Components: map[string]config.Component{"svc": {Run: "echo bad >> order", On: &config.On{Steps: []config.HookStep{{Startup: "up", Cleanup: "down"}, {Startup: "fail", Cleanup: "never"}}}}}}
+	o := NewOrchestrator(cfg, dir)
+	defer o.Close()
+	if err := o.StartComponent("svc"); err == nil {
+		t.Fatal("expected startup failure")
+	}
+	data, err := os.ReadFile(filepath.Join(dir, "order"))
+	if err != nil || string(data) != "up\ndown\n" {
+		t.Fatalf("rollback %q %v", data, err)
+	}
+}
+
+func TestPairedStepsCancelAndCleanupOnce(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.ConfigV2{Tasks: map[string]config.Task{
+		"one": {Run: "touch first"}, "undo": {Run: "echo undo >> order"}, "slow": {Run: "trap 'exit 130' INT; touch entered; while :; do sleep 0.01; done"}, "never": {Run: "echo never >> order"},
+	}, On: &config.On{Steps: []config.HookStep{{Startup: "one", Cleanup: "undo"}, {Startup: "slow", Cleanup: "never"}}}}
+	o := NewOrchestrator(cfg, dir)
+	started := make(chan error, 1)
+	go func() { started <- o.Start() }()
+	waitLifecycle(t, func() bool { _, err := os.Stat(filepath.Join(dir, "entered")); return err == nil })
+	var wg sync.WaitGroup
+	for range 3 {
+		wg.Add(1)
+		go func() { defer wg.Done(); _ = o.Stop() }()
+	}
+	wg.Wait()
+	if err := <-started; err == nil {
+		t.Fatal("cancelled startup unexpectedly succeeded")
+	}
+	_ = o.Close()
+	data, err := os.ReadFile(filepath.Join(dir, "order"))
+	if err != nil || string(data) != "undo\n" {
+		t.Fatalf("cleanup %q %v", data, err)
 	}
 }

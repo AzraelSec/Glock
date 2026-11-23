@@ -1,7 +1,6 @@
 package orchestrator
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"runtime"
@@ -50,11 +49,17 @@ func (o *Orchestrator) startComponent(name string) error {
 		return err
 	}
 	o.lifecycleMu.Lock()
-	o.cleanup[name] = env
+	o.cleanup[name] = cleanupState{env: env}
 	o.lifecycleMu.Unlock()
 	o.bus.Publish(event.Event{Name: event.ComponentStarting, Component: name})
 	if cfg.On != nil {
-		if err := o.runHooks(o.workCtx, cfg.On.Startup, name, dir, env, false); err != nil {
+		if err := o.startHooks(o.workCtx, cfg.On, name, dir, env, func(key string) {
+			o.lifecycleMu.Lock()
+			state := o.cleanup[name]
+			state.steps = append(state.steps, key)
+			o.cleanup[name] = state
+			o.lifecycleMu.Unlock()
+		}); err != nil {
 			return errors.Join(err, o.stopComponent(name))
 		}
 	}
@@ -86,7 +91,7 @@ func (o *Orchestrator) StopComponent(name string) error {
 
 func (o *Orchestrator) stopComponent(name string) error {
 	o.lifecycleMu.Lock()
-	env, eligible := o.cleanup[name]
+	state, eligible := o.cleanup[name]
 	o.lifecycleMu.Unlock()
 	if !eligible {
 		return fmt.Errorf("%w: %s", process.ErrNotRunning, name)
@@ -100,8 +105,8 @@ func (o *Orchestrator) stopComponent(name string) error {
 	}
 	cfg := o.cfg.Components[name]
 	if cfg.On != nil {
-		errs = append(errs, o.runHooks(context.Background(), cfg.On.Shutdown, name,
-			cfg.ExecutionDir(o.cfg.Sources, o.rootDir), env, true))
+		errs = append(errs, o.cleanupHooks(cfg.On, state.steps, name,
+			cfg.ExecutionDir(o.cfg.Sources, o.rootDir), state.env))
 	}
 	o.lifecycleMu.Lock()
 	delete(o.cleanup, name)

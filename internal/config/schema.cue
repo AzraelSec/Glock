@@ -57,19 +57,18 @@ package config
 	// relative to the component's Execution Environment
 	env_filenames?: [...string]
 	run:            string & != ""
-	on?: {
-		startup?: [...string]  // references to top-level task keys
-		shutdown?: [...string] // references to top-level task keys
-	}
+	on?: #On
 }
 
 // A Workspaces is a named collection of component references.
 #Workspaces: [...string]
 
-#On: {
-	startup?: [...string]  // references to top-level task keys
-	shutdown?: [...string] // references to top-level task keys
-}
+#On: ({
+ startup?: [...string]
+ shutdown?: [...string]
+} | {
+ steps: [...{startup: string & != "", cleanup?: string & != ""}]
+})
 
 // Root document.
 #Config: {

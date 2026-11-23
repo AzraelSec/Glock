@@ -138,8 +138,14 @@ type Component struct {
 
 // On holds task name references triggered by lifecycle events.
 type On struct {
-	Startup  []string `yaml:"startup,omitempty" json:"startup,omitempty"`
-	Shutdown []string `yaml:"shutdown,omitempty" json:"shutdown,omitempty"`
+	Startup  []string   `yaml:"startup,omitempty" json:"startup,omitempty"`
+	Shutdown []string   `yaml:"shutdown,omitempty" json:"shutdown,omitempty"`
+	Steps    []HookStep `yaml:"steps,omitempty" json:"steps,omitempty"`
+}
+
+type HookStep struct {
+	Startup string `yaml:"startup" json:"startup"`
+	Cleanup string `yaml:"cleanup,omitempty" json:"cleanup,omitempty"`
 }
 
 // Task is a reusable one-shot command.
@@ -219,13 +225,23 @@ func validateReferences(cfg *ConfigV2) error {
 		}
 	}
 
+	checkSteps := func(section string, on *On) {
+		for i, step := range on.Steps {
+			checkTaskRefs(fmt.Sprintf("%s.steps[%d].startup", section, i), []string{step.Startup})
+			if step.Cleanup != "" {
+				checkTaskRefs(fmt.Sprintf("%s.steps[%d].cleanup", section, i), []string{step.Cleanup})
+			}
+		}
+	}
 	if cfg.On != nil {
+		checkSteps("on", cfg.On)
 		checkTaskRefs("on.startup", cfg.On.Startup)
 		checkTaskRefs("on.shutdown", cfg.On.Shutdown)
 	}
 
 	for compName, comp := range cfg.Components {
 		if comp.On != nil {
+			checkSteps(fmt.Sprintf("components.%s.on", compName), comp.On)
 			checkTaskRefs(fmt.Sprintf("components.%s.on.startup", compName), comp.On.Startup)
 			checkTaskRefs(fmt.Sprintf("components.%s.on.shutdown", compName), comp.On.Shutdown)
 		}

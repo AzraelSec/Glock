@@ -512,3 +512,24 @@ func TestComponentSourceExecutionPaths(t *testing.T) {
 		}
 	}
 }
+
+func TestPairedHookValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw string
+		valid     bool
+	}{
+		{"valid", "on:\n  steps:\n    - {startup: up, cleanup: down}\n", true},
+		{"empty steps", "on:\n  steps: []\n", true},
+		{"mixed", "on:\n  startup: [up]\n  steps: [{startup: up, cleanup: down}]\n", false},
+		{"missing startup reference", "on:\n  steps: [{startup: missing}]\n", false},
+		{"missing cleanup reference", "on:\n  steps: [{startup: up, cleanup: missing}]\n", false},
+		{"component mixed", "components:\n  c:\n    run: echo\n    on: {shutdown: [down], steps: [{startup: up}]}\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ParseConfigV2([]byte("version: 2\ntasks:\n  up: {run: echo}\n  down: {run: echo}\n" + tc.raw))
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+		})
+	}
+}
