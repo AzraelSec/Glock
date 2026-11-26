@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"slices"
 	"sync"
 
@@ -29,19 +28,15 @@ func (r *Run) OutputLoss() runtime.OutputLoss {
 	return runtime.OutputLoss{DroppedChunks: r.stats.dropped.Load(), TruncatedDrains: r.stats.truncated.Load()}
 }
 
-func StartRun(ctx context.Context, project *config.Project, names []string, failFast bool) *Run {
+func StartRun(ctx context.Context, project *config.Project, names []string) *Run {
 	// Shutdown hooks still produce output after ctx is canceled.
-	ctx, cancel := context.WithCancel(ctx)
-	var opts orchestrator.Options
-	if failFast {
-		opts.OnStartupFailure = cancel
-	}
-	orch, stats, lines := streamingProject(context.Background(), project, opts)
+	orch, stats, lines := streamingProject(context.Background(), project)
 	names = slices.Clone(names)
+	slices.Sort(names)
 	reports := make(chan error, len(names))
 	r := &Run{Output: lines, Failures: reports, done: make(chan struct{}), stats: stats}
 	go func() {
-		r.err = supervise(ctx, cancel, orch, names, failFast, reports)
+		r.err = supervise(ctx, orch, names, reports)
 		close(reports)
 		close(lines)
 		close(r.done)
@@ -49,11 +44,12 @@ func StartRun(ctx context.Context, project *config.Project, names []string, fail
 	return r
 }
 
-func supervise(ctx context.Context, cancel context.CancelFunc, orch *orchestrator.Orchestrator, names []string, failFast bool, reports chan<- error) (err error) {
+func supervise(ctx context.Context, orch *orchestrator.Orchestrator, names []string, reports chan<- error) (err error) {
 	var workers sync.WaitGroup
+	// Cancellation requests shutdown immediately, including during startup.
+	// Closing the orchestrator below is the single place that awaits cleanup.
 	stopWatcher := context.AfterFunc(ctx, func() { _ = orch.Stop() })
 	defer func() {
-		cancel()
 		stopWatcher()
 		err = errors.Join(err, orch.Close())
 	}()
@@ -67,13 +63,9 @@ func supervise(ctx context.Context, cancel context.CancelFunc, orch *orchestrato
 		return err
 	}
 
-	type result struct {
-		name string
-		err  error
-	}
-	results := make(chan result, len(names))
+	failures := make([]error, len(names))
 	slots := make(chan struct{}, 8)
-	for _, name := range names {
+	for i, name := range names {
 		workers.Go(func() {
 			select {
 			case slots <- struct{}{}:
@@ -92,34 +84,20 @@ func supervise(ctx context.Context, cancel context.CancelFunc, orch *orchestrato
 				return
 			case startErr != nil:
 				failure = fmt.Errorf("component %s: %w", name, startErr)
+			// Wait for the terminal outcome even during shutdown to retain
+			// failures that were recorded before cancellation.
 			case <-exit == process.Failed:
 				failure = fmt.Errorf("component %s failed", name)
 			default:
 				return
 			}
-			// Always consume the launch's terminal outcome. Stop resolves live
-			// launches as Stopped; cancellation must not erase a prior Failed result.
-			if failFast {
-				cancel()
-			}
 			reports <- failure
-			if !failFast {
-				if cleanupErr := orch.CleanupFailedComponent(name); cleanupErr != nil {
-					failure = errors.Join(failure, fmt.Errorf("component %s cleanup: %w", name, cleanupErr))
-				}
+			if cleanupErr := orch.CleanupFailedComponent(name); cleanupErr != nil {
+				failure = errors.Join(failure, fmt.Errorf("component %s cleanup: %w", name, cleanupErr))
 			}
-			results <- result{name, failure}
+			failures[i] = failure
 		})
 	}
 	workers.Wait()
-	close(results)
-	failures := make(map[string]error)
-	for outcome := range results {
-		failures[outcome.name] = outcome.err
-	}
-	var errs []error
-	for _, name := range slices.Sorted(maps.Keys(failures)) {
-		errs = append(errs, failures[name])
-	}
-	return errors.Join(errs...)
+	return errors.Join(failures...)
 }

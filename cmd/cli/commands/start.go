@@ -43,7 +43,6 @@ func selectedComponents(cfg *config.ConfigV2, repos []string) ([]string, error) 
 
 func startFactory(dm *dependency.Manager) *cobra.Command {
 	var repos []string
-	var failFast bool
 	cmd := &cobra.Command{Use: "start", Short: "Start the development stack 🚀", RunE: func(cmd *cobra.Command, args []string) error {
 		project, err := dm.LoadProject()
 		if err != nil {
@@ -55,21 +54,20 @@ func startFactory(dm *dependency.Manager) *cobra.Command {
 		}
 		ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
-		if err := runStart(ctx, project, names, cmd.OutOrStdout(), cmd.ErrOrStderr(), failFast); err != nil {
+		if err := runStart(ctx, project, names, cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
 			return err
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), color.GreenString("Execution completed"))
 		return nil
 	}}
-	cmd.Flags().BoolVar(&failFast, "fail-fast", false, "Stop the stack when a component fails")
 	cmd.Flags().StringArrayVarP(&repos, "repos", "r", nil, "list of repository you want to start")
 	return cmd
 }
 
-func runStart(ctx context.Context, project *config.Project, names []string, stdout, stderr io.Writer, failFast bool) (err error) {
+func runStart(ctx context.Context, project *config.Project, names []string, stdout, stderr io.Writer) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	run := engine.StartRun(ctx, project, names, failFast)
+	run := engine.StartRun(ctx, project, names)
 	outputErrors := make(chan error, 1)
 	outputDone := make(chan struct{})
 	go func() {

@@ -29,7 +29,7 @@
 ## Runtime Quirks
 - `start` uses engine sessions, awaited hooks, and component dotenv files; host environment values win.
 - `start --repos repoA --repos repoB` filters components by Git-source key.
-- No filter starts all components, including sourceless services. Failed components do not stop others by default; `--fail-fast` stops the stack.
+- No filter starts all components, including sourceless services. Glock cleans up failed components while healthy ones keep running.
 - Existing startup/shutdown lists retain their behavior; `on.steps` pairs successful startup tasks with reverse-order cleanup.
 - Live output queues and snapshot history are bounded and report output loss; environment values are excluded from frontend snapshots.
 - `switch` and `reset` refuse dirty repos unless `switch --force` is used.

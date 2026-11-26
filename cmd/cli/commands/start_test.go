@@ -49,7 +49,7 @@ on: {startup: [app]}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
-	if err = runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"api"}, &stdout, &stderr, false); err != nil {
+	if err = runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"api"}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
 
@@ -81,7 +81,7 @@ func TestStartFailureAndCleanup(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			var stdout, stderr bytes.Buffer
-			err := runStart(ctx, &config.Project{Config: cfg, Root: root}, []string{"api"}, &stdout, &stderr, false)
+			err := runStart(ctx, &config.Project{Config: cfg, Root: root}, []string{"api"}, &stdout, &stderr)
 			if (err != nil) != (run == "exit 4") {
 				t.Fatalf("run %s error: %v", run, err)
 			}
@@ -99,7 +99,7 @@ func TestStartCancellationDuringInitialization(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	var stdout, stderr bytes.Buffer
-	go func() { done <- runStart(ctx, &config.Project{Config: cfg, Root: root}, nil, &stdout, &stderr, false) }()
+	go func() { done <- runStart(ctx, &config.Project{Config: cfg, Root: root}, nil, &stdout, &stderr) }()
 	deadline := time.After(5 * time.Second)
 	for {
 		if _, err := os.Stat(filepath.Join(root, "entered")); err == nil {
@@ -127,7 +127,7 @@ func TestStartPropagatesShutdownError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
-	if err := runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"api"}, &stdout, &stderr, false); err == nil {
+	if err := runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"api"}, &stdout, &stderr); err == nil {
 		t.Fatal("cleanup failure discarded")
 	}
 }
@@ -140,7 +140,7 @@ func TestStartFilesystemSourceRunsInExistingDirectory(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var out, errOut bytes.Buffer
-	if err := runStart(ctx, &config.Project{Config: cfg, Root: projectRoot}, []string{"tool"}, &out, &errOut, false); err != nil {
+	if err := runStart(ctx, &config.Project{Config: cfg, Root: projectRoot}, []string{"tool"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"component-ran", "setup-ran", "cleanup-ran"} {
@@ -153,52 +153,57 @@ func TestStartFilesystemSourceRunsInExistingDirectory(t *testing.T) {
 	}
 }
 
-func TestComponentFailurePolicy(t *testing.T) {
-	for _, fast := range []bool{false, true} {
-		t.Run(fmt.Sprintf("failfast=%v", fast), func(t *testing.T) {
+func TestStartKeepsHealthyComponentsRunning(t *testing.T) {
+	for _, failure := range []string{"process", "startup hook"} {
+		t.Run(failure, func(t *testing.T) {
 			dir := t.TempDir()
-			cfg := &config.ConfigV2{Components: map[string]config.Component{
-				"bad":  {Run: "exit 7", On: &config.On{Shutdown: []string{"cleanup"}}},
-				"good": {Run: "touch good-started; while :; do sleep 0.05; done"},
-			}, Tasks: map[string]config.Task{"cleanup": {Run: "touch bad-cleaned"}}}
-			ctx, cancel := context.WithCancel(context.Background())
+			failCommand := "while [ ! -f good-started ]; do sleep .01; done; exit 7"
+			bad := config.Component{Run: failCommand, On: &config.On{Shutdown: []string{"cleanup"}}}
+			if failure == "startup hook" {
+				bad.Run = "touch bad-launched"
+				bad.On.Startup = []string{"fail"}
+			}
+			cfg := &config.ConfigV2{
+				Components: map[string]config.Component{
+					"bad":  bad,
+					"good": {Run: "trap 'exit 0' INT; touch good-started; while [ ! -f bad-cleaned ]; do sleep .01; done; touch good-continued; while :; do sleep .02; done"},
+				},
+				Tasks: map[string]config.Task{
+					"cleanup": {Run: "touch bad-cleaned"},
+					"fail":    {Run: failCommand},
+				},
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			done := make(chan error, 1)
-			var out, errOut bytes.Buffer
 			go func() {
-				done <- runStart(ctx, &config.Project{Config: cfg, Root: dir}, []string{"bad", "good"}, &out, &errOut, fast)
+				done <- runStart(ctx, &config.Project{Config: cfg, Root: dir}, []string{"bad", "good"}, io.Discard, io.Discard)
 			}()
-			if !fast {
-				until := time.After(5 * time.Second)
-				for {
-					if _, err := os.Stat(filepath.Join(dir, "bad-cleaned")); err == nil {
-						break
-					}
-					select {
-					case e := <-done:
-						t.Fatalf("stopped healthy component: %v", e)
-					case <-until:
-						t.Fatal("failed component cleanup did not run")
-					case <-time.After(10 * time.Millisecond):
-					}
-				}
-				if _, err := os.Stat(filepath.Join(dir, "good-started")); err != nil {
-					t.Fatal("healthy component did not start", err)
+			ticker := time.NewTicker(10 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				if _, err := os.Stat(filepath.Join(dir, "good-continued")); err == nil {
+					break
 				}
 				select {
-				case e := <-done:
-					t.Fatalf("exited early: %v", e)
-				default:
+				case err := <-done:
+					t.Fatalf("stack exited before the healthy component continued: %v", err)
+				case <-ctx.Done():
+					t.Fatal("healthy component did not continue after failure cleanup")
+				case <-ticker.C:
 				}
-				cancel()
 			}
+			cancel()
 			select {
 			case err := <-done:
-				if err == nil || !strings.Contains(err.Error(), "bad") {
+				if err == nil || !strings.Contains(err.Error(), "component bad") {
 					t.Fatalf("missing failure: %v", err)
 				}
-			case <-time.After(8 * time.Second):
-				t.Fatal("did not exit")
+			case <-time.After(5 * time.Second):
+				t.Fatal("stack did not exit after cancellation")
+			}
+			if _, err := os.Stat(filepath.Join(dir, "bad-launched")); !os.IsNotExist(err) {
+				t.Fatalf("component launched after its startup hook failed: %v", err)
 			}
 		})
 	}
@@ -209,7 +214,7 @@ func TestStartHandlesLongOutputLine(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	var out, errOut bytes.Buffer
-	if err := runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"long"}, &out, &errOut, false); err != nil {
+	if err := runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"long"}, &out, &errOut); err != nil {
 		t.Fatal(err)
 	}
 	expected := "[long] " + strings.Repeat("x", 2097152) + "\n"
@@ -237,7 +242,7 @@ func TestBlockedOutputDoesNotBlockShutdown(t *testing.T) {
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"one"}, writer, io.Discard, false)
+		done <- runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"one"}, writer, io.Discard)
 	}()
 	select {
 	case <-writer.entered:
@@ -254,30 +259,12 @@ func TestBlockedOutputDoesNotBlockShutdown(t *testing.T) {
 	}
 }
 
-func TestFailFastInterruptsPendingStartup(t *testing.T) {
-	dir := t.TempDir()
-	cfg := &config.ConfigV2{Components: map[string]config.Component{
-		"bad": {Run: "exit 9"}, "slow": {Run: "true", On: &config.On{Startup: []string{"slow"}}},
-	}, Tasks: map[string]config.Task{"slow": {Run: "sleep 30"}}}
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
-	defer cancel()
-	var out, errOut bytes.Buffer
-	started := time.Now()
-	err := runStart(ctx, &config.Project{Config: cfg, Root: dir}, []string{"bad", "slow"}, &out, &errOut, true)
-	if err == nil || !strings.Contains(err.Error(), "bad") {
-		t.Fatalf("failure: %v", err)
-	}
-	if time.Since(started) > 6*time.Second {
-		t.Fatal("fail-fast waited for slow startup")
-	}
-}
-
 func TestStartPreservesFinalOutputWithoutNewline(t *testing.T) {
 	cfg := &config.ConfigV2{Components: map[string]config.Component{"one": {Run: "printf no-newline"}}}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	var out, stderr bytes.Buffer
-	if err := runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"one"}, &out, &stderr, false); err != nil {
+	if err := runStart(ctx, &config.Project{Config: cfg, Root: t.TempDir()}, []string{"one"}, &out, &stderr); err != nil {
 		t.Fatal(err)
 	}
 	if got := out.String(); got != "[one] no-newline" {

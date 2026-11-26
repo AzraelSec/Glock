@@ -99,9 +99,8 @@ glock start --repos backend
 `start` keeps tagged terminal output and now runs the engine lifecycle: startup
 hooks are awaited, workspaces/components are not readiness dependency graphs,
 and shutdown awaits cleanup. There is no fixed five-second service delay.
-A failed component is reported while other components continue; use `start
---fail-fast` to stop the stack on the first failure. `start` exits nonzero if
-any component failed. Output uses bounded queues: slow consumers can lose
+Glock reports and cleans up failed components while healthy ones keep running.
+When `start` ends, it exits nonzero if any component failed. Output uses bounded queues: slow consumers can lose
 fragments, and Glock reports loss or a truncated pipe drain on shutdown. Retained
 snapshot history is bounded independently and exposes its eviction count.
 

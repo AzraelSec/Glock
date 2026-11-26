@@ -28,7 +28,7 @@ func (o *Orchestrator) StartComponent(name string) error {
 }
 
 // StartTrackedComponent leaves registered cleanup to the batch supervisor so
-// a failed launch can trigger stack shutdown before its rollback completes.
+// a failed launch can be reported before its rollback completes.
 func (o *Orchestrator) StartTrackedComponent(name string) (<-chan process.ProcessState, error) {
 	done, err := o.begin(name)
 	if err != nil {
@@ -86,8 +86,6 @@ func (o *Orchestrator) launch(name string, rollback bool) (exit <-chan process.P
 			return nil, err
 		}
 	}
-	o.launchMu.RLock()
-	defer o.launchMu.RUnlock()
 	if err := o.workCtx.Err(); err != nil {
 		return nil, err
 	}
