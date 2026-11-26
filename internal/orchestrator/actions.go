@@ -24,33 +24,56 @@ func (o *Orchestrator) StartComponent(name string) error {
 		return err
 	}
 	defer done()
-	return o.startComponent(name)
+	return o.startWithRollback(name)
 }
 
-func (o *Orchestrator) startComponent(name string) error {
+// StartTrackedComponent leaves registered cleanup to the batch supervisor so
+// a failed launch can trigger stack shutdown before its rollback completes.
+func (o *Orchestrator) StartTrackedComponent(name string) (<-chan process.ProcessState, error) {
+	done, err := o.begin(name)
+	if err != nil {
+		return nil, err
+	}
+	defer done()
+	return o.launch(name, false)
+}
+
+func (o *Orchestrator) startWithRollback(name string) error {
+	_, err := o.launch(name, true)
+	return err
+}
+
+func (o *Orchestrator) launch(name string, rollback bool) (exit <-chan process.ProcessState, err error) {
 	if p, ok := o.procMgr.Get(name); ok {
 		if p.State == process.Running {
-			return process.ErrAlreadyRunning
+			return nil, process.ErrAlreadyRunning
 		}
 		if p.State == process.Stopping {
-			return process.ErrStopping
+			return nil, process.ErrStopping
 		}
 	}
 	// A completed/crashed previous execution still needs its cleanup.
 	if o.needsCleanup(name) {
 		if err := o.stopComponent(name); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	cfg := o.cfg.Components[name]
 	dir := cfg.ExecutionDir(o.cfg.Sources, o.rootDir)
 	env := loadEnv(dir, cfg.EnvFilenames)
 	if err := o.workCtx.Err(); err != nil {
-		return err
+		return nil, err
 	}
 	o.lifecycleMu.Lock()
 	o.cleanup[name] = cleanupState{env: env}
 	o.lifecycleMu.Unlock()
+	if rollback {
+		defer func() {
+			if err != nil {
+				err = errors.Join(err, o.stopComponent(name))
+			}
+		}()
+	}
 	o.bus.Publish(event.Event{Name: event.ComponentStarting, Component: name})
 	if cfg.On != nil {
 		if err := o.startHooks(o.workCtx, cfg.On, name, dir, env, func(key string) {
@@ -60,16 +83,15 @@ func (o *Orchestrator) startComponent(name string) error {
 			o.cleanup[name] = state
 			o.lifecycleMu.Unlock()
 		}); err != nil {
-			return errors.Join(err, o.stopComponent(name))
+			return nil, err
 		}
 	}
+	o.launchMu.RLock()
+	defer o.launchMu.RUnlock()
 	if err := o.workCtx.Err(); err != nil {
-		return errors.Join(err, o.stopComponent(name))
+		return nil, err
 	}
-	if err := o.procMgr.Start(process.StartRequest{Component: name, Command: cfg.Run, ExecDir: dir, Env: env}); err != nil {
-		return errors.Join(err, o.stopComponent(name))
-	}
-	return nil
+	return o.procMgr.StartTracked(process.StartRequest{Component: name, Command: cfg.Run, ExecDir: dir, Env: env})
 }
 
 func (o *Orchestrator) needsCleanup(name string) bool {
@@ -90,6 +112,33 @@ func (o *Orchestrator) StopComponent(name string) error {
 }
 
 func (o *Orchestrator) stopComponent(name string) error {
+	err := o.cleanupComponent(name)
+	o.lifecycleMu.Lock()
+	if o.stopping && err != nil {
+		o.cleanupErrors = append(o.cleanupErrors, err)
+	}
+	o.lifecycleMu.Unlock()
+	return err
+}
+
+// CleanupFailedComponent returns cleanup errors to the supervisor. If shutdown
+// already owns the component, Stop will run and report its cleanup instead.
+func (o *Orchestrator) CleanupFailedComponent(name string) error {
+	done, err := o.begin(name)
+	if errors.Is(err, ErrShuttingDown) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	defer done()
+	if !o.needsCleanup(name) {
+		return nil
+	}
+	return o.cleanupComponent(name)
+}
+
+func (o *Orchestrator) cleanupComponent(name string) error {
 	o.lifecycleMu.Lock()
 	state, eligible := o.cleanup[name]
 	o.lifecycleMu.Unlock()
@@ -99,7 +148,7 @@ func (o *Orchestrator) stopComponent(name string) error {
 	o.bus.Publish(event.Event{Name: event.ComponentStopping, Component: name})
 	var errs []error
 	if proc, ok := o.procMgr.Get(name); ok && proc.State == process.Running {
-		if err := o.procMgr.Stop(name); err != nil {
+		if err := o.procMgr.Stop(name); err != nil && !errors.Is(err, process.ErrNotRunning) {
 			errs = append(errs, err)
 		}
 	}
@@ -110,12 +159,8 @@ func (o *Orchestrator) stopComponent(name string) error {
 	}
 	o.lifecycleMu.Lock()
 	delete(o.cleanup, name)
-	err := errors.Join(errs...)
-	if o.stopping && err != nil {
-		o.cleanupErrors = append(o.cleanupErrors, err)
-	}
 	o.lifecycleMu.Unlock()
-	return err
+	return errors.Join(errs...)
 }
 
 // Restart follows the same cleanup/setup paths and reloads dotenv values.
@@ -130,7 +175,7 @@ func (o *Orchestrator) RestartComponent(name string) error {
 			return err
 		}
 	}
-	return o.startComponent(name)
+	return o.startWithRollback(name)
 }
 
 // RunTask admits an ordinary task owned by the application work context.

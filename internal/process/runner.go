@@ -29,6 +29,7 @@ type OSProcess struct {
 	cmd      *exec.Cmd
 	pid      int
 	output   Output
+	exited   chan struct{}
 	done     chan struct{}
 	exitCode int
 	signal   int
@@ -96,6 +97,7 @@ func NewOSProcess(command, execDir string, env []string, output Output) (*OSProc
 		cmd:    cmd,
 		pid:    cmd.Process.Pid,
 		output: output,
+		exited: make(chan struct{}),
 		done:   make(chan struct{}),
 	}
 
@@ -112,9 +114,25 @@ func NewOSProcess(command, execDir string, env []string, output Output) (*OSProc
 
 	// Reap the leader immediately, then let the scanners drain their own
 	// pipes. Descendants can retain writers indefinitely, so the grace deadline
-	// closes the readers and waits for their goroutines before reporting exit.
+	// closes the readers and waits for their goroutines before marking output complete.
 	go func() {
 		waitErr := cmd.Wait()
+		op.mu.Lock()
+		if waitErr != nil {
+			if exitErr, ok := waitErr.(*exec.ExitError); ok {
+				op.exitCode = exitErr.ExitCode()
+				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+					op.signal = int(ws.Signal())
+				}
+			} else {
+				op.exitCode = -1
+			}
+			op.exitErr = waitErr
+		} else {
+			op.exitCode = 0
+		}
+		op.mu.Unlock()
+		close(op.exited)
 
 		drained := make(chan struct{})
 		go func() {
@@ -134,21 +152,6 @@ func NewOSProcess(command, execDir string, env []string, output Output) (*OSProc
 		stdout.Close()
 		stderr.Close()
 
-		op.mu.Lock()
-		if waitErr != nil {
-			if exitErr, ok := waitErr.(*exec.ExitError); ok {
-				op.exitCode = exitErr.ExitCode()
-				if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
-					op.signal = int(ws.Signal())
-				}
-			} else {
-				op.exitCode = -1
-			}
-			op.exitErr = waitErr
-		} else {
-			op.exitCode = 0
-		}
-		op.mu.Unlock()
 		close(op.done)
 	}()
 
@@ -217,7 +220,12 @@ func (op *OSProcess) SendSignal(sig syscall.Signal) error {
 	return syscall.Kill(-op.pid, sig)
 }
 
-// WaitChan returns a channel that is closed when the OS process exits.
+// ExitChan closes after the process leader is reaped and its exit status recorded.
+func (op *OSProcess) ExitChan() <-chan struct{} {
+	return op.exited
+}
+
+// WaitChan closes after the leader exits and output draining finishes.
 func (op *OSProcess) WaitChan() <-chan struct{} {
 	return op.done
 }

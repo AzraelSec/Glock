@@ -84,22 +84,24 @@ type Orchestrator struct {
 	eventsSub     event.Subscription
 	collectorDone chan struct{}
 
-	stopOnce      sync.Once
-	closeOnce     sync.Once
-	stopErr       error
-	lifecycleMu   sync.Mutex
-	stopping      bool
-	busy          map[string]bool
-	cleanup       map[string]cleanupState
-	appSteps      []string
-	actions       sync.WaitGroup
-	workCtx       context.Context
-	cancelWork    context.CancelFunc
-	hookTimeout   time.Duration
-	appStarting   bool
-	appStarted    bool
-	appCleanup    bool
-	cleanupErrors []error
+	stopOnce         sync.Once
+	closeOnce        sync.Once
+	stopErr          error
+	lifecycleMu      sync.Mutex
+	launchMu         sync.RWMutex
+	onStartupFailure func()
+	stopping         bool
+	busy             map[string]bool
+	cleanup          map[string]cleanupState
+	appSteps         []string
+	actions          sync.WaitGroup
+	workCtx          context.Context
+	cancelWork       context.CancelFunc
+	hookTimeout      time.Duration
+	appStarting      bool
+	appStarted       bool
+	appCleanup       bool
+	cleanupErrors    []error
 }
 
 type cleanupState struct {
@@ -112,6 +114,10 @@ type cleanupState struct {
 type Options struct {
 	HookTimeout, StopTimeout time.Duration
 	Output                   process.OutputSink
+	// OnStartupFailure requests fail-fast shutdown as soon as a hook fails.
+	// With this callback, shutdown signals running processes before joining
+	// in-flight actions. The callback must not wait for shutdown.
+	OnStartupFailure func()
 }
 
 // NewOrchestrator creates an engine with the default lifecycle deadlines.
@@ -136,20 +142,21 @@ func NewOrchestratorWithOptions(cfg *config.ConfigV2, rootDir string, opts Optio
 	taskMgr := task.NewTaskManagerWithTimeout(bus, opts.StopTimeout, opts.Output)
 
 	o := &Orchestrator{
-		cfg:         cfg,
-		rootDir:     rootDir,
-		bus:         bus,
-		procMgr:     procMgr,
-		taskMgr:     taskMgr,
-		components:  make(map[string]component.Component),
-		workspaces:  make(map[string]workspace.Workspace),
-		events:      newEventRing(maxRecentEvents),
-		workCtx:     workCtx,
-		cancelWork:  cancelWork,
-		hookTimeout: opts.HookTimeout,
-		busy:        make(map[string]bool),
-		cleanup:     make(map[string]cleanupState),
-		appCleanup:  true,
+		cfg:              cfg,
+		onStartupFailure: opts.OnStartupFailure,
+		rootDir:          rootDir,
+		bus:              bus,
+		procMgr:          procMgr,
+		taskMgr:          taskMgr,
+		components:       make(map[string]component.Component),
+		workspaces:       make(map[string]workspace.Workspace),
+		events:           newEventRing(maxRecentEvents),
+		workCtx:          workCtx,
+		cancelWork:       cancelWork,
+		hookTimeout:      opts.HookTimeout,
+		busy:             make(map[string]bool),
+		cleanup:          make(map[string]cleanupState),
+		appCleanup:       true,
 	}
 
 	// Build component registry from config.
@@ -249,6 +256,16 @@ func (o *Orchestrator) begin(name string) (func(), error) {
 
 // Start awaits application initialization before announcing success.
 func (o *Orchestrator) Start() error {
+	return o.start(true)
+}
+
+// StartBatch leaves application rollback to Stop, which reports cleanup errors
+// separately from the startup result.
+func (o *Orchestrator) StartBatch() error {
+	return o.start(false)
+}
+
+func (o *Orchestrator) start(rollback bool) error {
 	done, err := o.begin("")
 	if err != nil {
 		return err
@@ -273,6 +290,9 @@ func (o *Orchestrator) Start() error {
 			o.appSteps = append(o.appSteps, key)
 			o.lifecycleMu.Unlock()
 		}); err != nil {
+			if !rollback {
+				return err
+			}
 			o.lifecycleMu.Lock()
 			steps := append([]string(nil), o.appSteps...)
 			o.appSteps = nil
@@ -306,8 +326,29 @@ func (o *Orchestrator) Stop() error {
 		o.cancelWork()
 		o.lifecycleMu.Unlock()
 		o.bus.Publish(event.Event{Name: event.ApplicationStopping})
+		var earlyStops sync.WaitGroup
+		var stopErrors chan error
+		if o.onStartupFailure != nil {
+			// Wait for fork/exec already in progress. Startup hooks can keep
+			// draining while the running process groups receive SIGINT.
+			o.launchMu.Lock()
+			running := o.procMgr.All()
+			o.launchMu.Unlock()
+			stopErrors = make(chan error, len(running))
+			for _, proc := range running {
+				if proc.State != process.Running {
+					continue
+				}
+				earlyStops.Go(func() {
+					if err := o.procMgr.Stop(proc.Component); err != nil && !errors.Is(err, process.ErrNotRunning) {
+						stopErrors <- err
+					}
+				})
+			}
+		}
 		o.actions.Wait()
 		o.taskMgr.CancelAllAndWait()
+		earlyStops.Wait()
 		var wg sync.WaitGroup
 		sem := make(chan struct{}, maxConcurrentActions)
 		for _, name := range o.allComponentNames() {
@@ -324,9 +365,16 @@ func (o *Orchestrator) Stop() error {
 		o.lifecycleMu.Lock()
 		errs := append([]error(nil), o.cleanupErrors...)
 		o.lifecycleMu.Unlock()
+		if stopErrors != nil {
+			close(stopErrors)
+			for err := range stopErrors {
+				errs = append(errs, err)
+			}
+		}
 		if o.cfg.On != nil && o.appCleanup {
 			errs = append(errs, o.cleanupHooks(o.cfg.On, o.appSteps, "", o.rootDir, nil))
 		}
+		o.procMgr.WaitOutput()
 		o.stopErr = errors.Join(errs...)
 		o.bus.Publish(event.Event{Name: event.ApplicationStopped})
 	})
@@ -378,10 +426,18 @@ func (o *Orchestrator) runHooks(ctx context.Context, keys []string, namespace, d
 			name = namespace + "/" + key
 		}
 		hookCtx, cancel := context.WithTimeout(ctx, o.hookTimeout)
-		completion, err := o.taskMgr.RunContext(hookCtx, &task.Task{
+		var onFailure func(error)
+		if !cleanup && o.onStartupFailure != nil {
+			onFailure = func(err error) {
+				if !errors.Is(err, context.Canceled) {
+					o.onStartupFailure()
+				}
+			}
+		}
+		completion, err := o.taskMgr.RunContextWithFailure(hookCtx, &task.Task{
 			Name: name, Description: t.Description, Command: t.Run, ExecDir: dir,
 			Env: env, State: task.Pending, Output: process.NewRingOutput(0),
-		})
+		}, onFailure)
 		if err == nil {
 			err = (<-completion).Err
 		}

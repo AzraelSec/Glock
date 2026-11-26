@@ -29,14 +29,15 @@ type StartRequest struct {
 // and enforces the Stopping lock: no Start/Stop/Restart commands are
 // accepted while a process is in the Stopping state.
 type ProcessManager struct {
-	outputSink OutputSink
-	processes  map[string]*Process
-	runners    map[string]*OSProcess
-	requests   map[string]StartRequest
-	starting   map[string]struct{}
-	mu         sync.RWMutex
-	publisher  event.Publisher
-	timeout    time.Duration
+	outputSink   OutputSink
+	processes    map[string]*Process
+	runners      map[string]*OSProcess
+	requests     map[string]StartRequest
+	starting     map[string]struct{}
+	mu           sync.RWMutex
+	outputDrains sync.WaitGroup
+	publisher    event.Publisher
+	timeout      time.Duration
 }
 
 // NewProcessManager returns a manager ready to track processes.
@@ -67,6 +68,12 @@ func NewProcessManager(publisher event.Publisher, timeout time.Duration, sinks .
 // so an in-flight Stop can never corrupt a successor's state. Stopped
 // or Failed processes may be restarted.
 func (pm *ProcessManager) Start(req StartRequest) error {
+	_, err := pm.StartTracked(req)
+	return err
+}
+
+// StartTracked returns the terminal state of this launch, including immediate exits.
+func (pm *ProcessManager) StartTracked(req StartRequest) (<-chan ProcessState, error) {
 	// Clone the caller's env slice so post-Start mutation cannot leak
 	// into the runtime snapshot or the stored restart request.
 	req.Env = slices.Clone(req.Env)
@@ -74,16 +81,16 @@ func (pm *ProcessManager) Start(req StartRequest) error {
 	pm.mu.Lock()
 	if _, ok := pm.starting[req.Component]; ok {
 		pm.mu.Unlock()
-		return fmt.Errorf("%w: %s", ErrStarting, req.Component)
+		return nil, fmt.Errorf("%w: %s", ErrStarting, req.Component)
 	}
 	if proc, exists := pm.processes[req.Component]; exists {
 		switch proc.State {
 		case Running:
 			pm.mu.Unlock()
-			return fmt.Errorf("%w: %s", ErrAlreadyRunning, req.Component)
+			return nil, fmt.Errorf("%w: %s", ErrAlreadyRunning, req.Component)
 		case Stopping:
 			pm.mu.Unlock()
-			return fmt.Errorf("%w: %s", ErrStopping, req.Component)
+			return nil, fmt.Errorf("%w: %s", ErrStopping, req.Component)
 		}
 	}
 	// Reserve the key so a concurrent Start blocks here; the actual
@@ -97,10 +104,12 @@ func (pm *ProcessManager) Start(req StartRequest) error {
 		pm.mu.Lock()
 		delete(pm.starting, req.Component)
 		pm.mu.Unlock()
-		return err
+		return nil, err
 	}
 
+	exit := make(chan ProcessState, 1)
 	proc := &Process{
+		exit:      exit,
 		Component: req.Component,
 		State:     Running,
 		PID:       runner.pid,
@@ -117,16 +126,10 @@ func (pm *ProcessManager) Start(req StartRequest) error {
 
 	pm.emitEvent(event.ComponentStarted, req.Component, &event.ComponentStartedPayload{PID: runner.pid})
 
-	// If the process exits before the monitor goroutine starts, handle it
-	// synchronously so the state does not remain Running forever.
-	select {
-	case <-runner.WaitChan():
-		pm.handleUnexpectedDeath(req.Component, runner)
-	default:
-		go pm.monitor(req.Component, runner)
-	}
+	pm.outputDrains.Add(1)
+	go pm.monitor(req.Component, runner)
 
-	return nil
+	return exit, nil
 }
 
 // Stop sends a graceful stop signal (SIGINT) to the process group and
@@ -151,15 +154,21 @@ func (pm *ProcessManager) Stop(name string) error {
 		return fmt.Errorf("%w: %s (state: %s)", ErrNotRunning, name, proc.State)
 	}
 
-	proc.State = Stopping
 	runner, ok := pm.runners[name]
 	if !ok {
-		// Roll back — a missing runner must not wedge the component in
-		// the Stopping state forever.
-		proc.State = Running
 		pm.mu.Unlock()
 		return fmt.Errorf("runner not found for %s", name)
 	}
+	// The runner may have finished before its monitor acquires the lock.
+	// Preserve that launch's actual exit outcome instead of marking it stopped.
+	select {
+	case <-runner.ExitChan():
+		pm.recordExitLocked(name, proc, runner)
+		pm.mu.Unlock()
+		return nil
+	default:
+	}
+	proc.State = Stopping
 	pm.mu.Unlock()
 
 	// TODO: support a configurable stop signal per-component in the future.
@@ -282,42 +291,19 @@ func (pm *ProcessManager) All() []*Process {
 // Internal helpers
 // ------------------------------------------------------------------
 
-// monitor waits for the OS process to die unexpectedly (not via a
-// Stop/Kill call) and transitions the manager state accordingly.
-func (pm *ProcessManager) monitor(name string, runner *OSProcess) {
-	<-runner.WaitChan()
-
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	proc, ok := pm.processes[name]
-	if !ok {
-		return
-	}
-	// If a Stop/Kill is in progress it will handle the transition.
-	if proc.State == Stopping {
-		return
-	}
-	// Identity check: a newer Start may have replaced this runner; a
-	// stale monitor must never transition a successor's state.
-	if cur, ok := pm.runners[name]; !ok || cur != runner {
-		return
-	}
-
-	exitCode := runner.ExitCode()
-	if exitCode == 0 {
-		proc.State = Stopped
-		pm.emitEvent(event.ComponentStopped, name, &event.ComponentStoppedPayload{ExitCode: exitCode})
-	} else {
-		proc.State = Failed
-		pm.emitEvent(event.ProcessFailed, name, &event.ProcessFailedPayload{ExitCode: exitCode, Signal: runner.Signal()})
-	}
-	proc.PID = 0
-	delete(pm.runners, name)
+// WaitOutput waits for output from all launches, including replaced launches.
+// The caller must close start admission and settle in-flight starts first.
+func (pm *ProcessManager) WaitOutput() {
+	pm.outputDrains.Wait()
 }
 
-// handleUnexpectedDeath is the synchronous counterpart of monitor for
-// processes that exit before the monitor goroutine can be started.
+func (pm *ProcessManager) monitor(name string, runner *OSProcess) {
+	defer pm.outputDrains.Done()
+	<-runner.ExitChan()
+	pm.handleUnexpectedDeath(name, runner)
+	<-runner.WaitChan()
+}
+
 func (pm *ProcessManager) handleUnexpectedDeath(name string, runner *OSProcess) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
@@ -334,6 +320,10 @@ func (pm *ProcessManager) handleUnexpectedDeath(name string, runner *OSProcess) 
 		return
 	}
 
+	pm.recordExitLocked(name, proc, runner)
+}
+
+func (pm *ProcessManager) recordExitLocked(name string, proc *Process, runner *OSProcess) {
 	exitCode := runner.ExitCode()
 	if exitCode == 0 {
 		proc.State = Stopped
@@ -344,6 +334,8 @@ func (pm *ProcessManager) handleUnexpectedDeath(name string, runner *OSProcess) 
 	}
 	proc.PID = 0
 	delete(pm.runners, name)
+	proc.exit <- proc.State
+	close(proc.exit)
 }
 
 // transitionAfterStop finalises state after a Stop or Kill call has
@@ -373,6 +365,8 @@ func (pm *ProcessManager) transitionAfterStop(name string, runner *OSProcess) {
 	})
 	proc.PID = 0
 	delete(pm.runners, name)
+	proc.exit <- proc.State
+	close(proc.exit)
 }
 
 func (pm *ProcessManager) emitEvent(name string, component string, payload any) {

@@ -14,10 +14,7 @@ import (
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/engine"
-	"github.com/AzraelSec/glock/internal/frontend"
 	"github.com/AzraelSec/glock/internal/log"
-	"github.com/AzraelSec/glock/internal/process"
-	"github.com/AzraelSec/glock/internal/runtime"
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
@@ -70,21 +67,10 @@ func startFactory(dm *dependency.Manager) *cobra.Command {
 }
 
 func runStart(ctx context.Context, project *config.Project, names []string, stdout, stderr io.Writer, failFast bool) (err error) {
-	session := engine.OpenProject(project)
-	client, e := frontend.New(context.Background(), session)
-	if e != nil {
-		_ = session.Close()
-		return e
-	}
-
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	run := engine.StartRun(ctx, project, names, failFast)
 	outputErrors := make(chan error, 1)
-	reports := make(chan error, len(names)+1)
-	report := func(e error) {
-		select {
-		case reports <- e:
-		default:
-		}
-	}
 	outputDone := make(chan struct{})
 	go func() {
 		defer close(outputDone)
@@ -94,6 +80,7 @@ func runStart(ctx context.Context, project *config.Project, names []string, stdo
 			if !failed {
 				failed = true
 				outputErrors <- e
+				cancel()
 			}
 		}
 		writeReport := func(e error) {
@@ -103,26 +90,19 @@ func runStart(ctx context.Context, project *config.Project, names []string, stdo
 				}
 			}
 		}
-		for {
+		reports, lines := run.Failures, run.Output
+		for reports != nil || lines != nil {
 			select {
-			case e := <-reports:
-				writeReport(e)
-			case line, ok := <-session.Output():
+			case e, ok := <-reports:
 				if !ok {
-					for {
-						select {
-						case e := <-reports:
-							writeReport(e)
-						default:
-							loss := session.OutputLoss()
-							if !failed && (loss.DroppedChunks > 0 || loss.TruncatedDrains > 0) {
-								if _, err := fmt.Fprintf(stderr, "[glock] warning: output incomplete (%d chunks dropped, %d pipe drains truncated)\n", loss.DroppedChunks, loss.TruncatedDrains); err != nil {
-									reportErr(err)
-								}
-							}
-							return
-						}
-					}
+					reports = nil
+					continue
+				}
+				writeReport(e)
+			case line, ok := <-lines:
+				if !ok {
+					lines = nil
+					continue
 				}
 				if line.Truncated || failed {
 					continue
@@ -146,116 +126,24 @@ func runStart(ctx context.Context, project *config.Project, names []string, stdo
 				}
 			}
 		}
-	}()
-	defer func() {
-		shutdownErr := client.Execute(context.Background(), runtime.Command{Action: runtime.Shutdown})
-		closeErr := session.Close()
-		select {
-		case <-outputDone:
-		case <-time.After(2 * time.Second):
-			err = errors.Join(err, errors.New("output incomplete: terminal writer did not drain before shutdown"))
+		loss := run.OutputLoss()
+		if !failed && (loss.DroppedChunks > 0 || loss.TruncatedDrains > 0) {
+			_, e := fmt.Fprintf(stderr, "[glock] warning: output incomplete (%d chunks dropped, %d pipe drains truncated)\n", loss.DroppedChunks, loss.TruncatedDrains)
+			if e != nil {
+				reportErr(e)
+			}
 		}
-		client.Close()
-		select {
-		case e := <-outputErrors:
-			err = errors.Join(err, e)
-		default:
-		}
-		err = errors.Join(err, shutdownErr, closeErr)
 	}()
-
-	initialized := make(chan error, 1)
-	go func() { initialized <- client.Execute(ctx, runtime.Command{Action: runtime.Initialize}) }()
+	err = run.Wait()
 	select {
-	case <-ctx.Done():
-		return nil
+	case <-outputDone:
+	case <-time.After(2 * time.Second):
+		err = errors.Join(err, errors.New("output incomplete: terminal writer did not drain before shutdown"))
+	}
+	select {
 	case e := <-outputErrors:
-		return e
-	case e := <-initialized:
-		if e != nil {
-			return e
-		}
+		return errors.Join(err, e)
+	default:
+		return err
 	}
-	if len(names) == 0 {
-		return nil
-	}
-	type componentResult struct {
-		name string
-		err  error
-	}
-	results := make(chan componentResult, len(names))
-	pending := make(map[string]bool, len(names))
-	for _, name := range names {
-		pending[name] = true
-		go func() {
-			results <- componentResult{name, client.Execute(ctx, runtime.Command{Action: runtime.StartComponent, Target: name})}
-		}()
-	}
-	failures := map[string]error{}
-	finished := map[string]bool{}
-	targets := map[string]bool{}
-	for _, name := range names {
-		targets[name] = true
-	}
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return errors.Join(mapErrors(failures)...)
-		case e := <-outputErrors:
-			return e
-		case result := <-results:
-			delete(pending, result.name)
-			if result.err != nil {
-				failure := fmt.Errorf("component %s: %w", result.name, result.err)
-				failures[result.name] = failure
-				report(failure)
-				if failFast {
-					return errors.Join(mapErrors(failures)...)
-				}
-			}
-		case <-ticker.C:
-			for _, entry := range client.Components(runtime.WorkspaceAll) {
-				name := entry.Component.Name
-				if !targets[name] || pending[name] || failures[name] != nil || finished[name] || entry.Process == nil {
-					continue
-				}
-				switch entry.Process.State {
-				case process.Stopped:
-					finished[name] = true
-				case process.Failed:
-					failure := fmt.Errorf("component %s failed", name)
-					report(failure)
-					if !failFast {
-						cleanupErr := client.Execute(ctx, runtime.Command{Action: runtime.StopComponent, Target: name})
-						if cleanupErr != nil && ctx.Err() == nil {
-							failure = errors.Join(failure, fmt.Errorf("component %s cleanup: %w", name, cleanupErr))
-						}
-					}
-					failures[name] = failure
-					if failFast {
-						return errors.Join(mapErrors(failures)...)
-					}
-				}
-			}
-		}
-		if len(pending) == 0 && len(finished)+len(failures) == len(names) {
-			return errors.Join(mapErrors(failures)...)
-		}
-	}
-
-}
-
-func mapErrors(failures map[string]error) []error {
-	names := make([]string, 0, len(failures))
-	for name := range failures {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	out := make([]error, 0, len(names))
-	for _, name := range names {
-		out = append(out, failures[name])
-	}
-	return out
 }

@@ -231,7 +231,7 @@ func TestConcurrentShutdownSharesErrorsAndCompletesAllHooks(t *testing.T) {
 		"fail": {Run: "exit 19"}, "cleanup": {Run: "printf component >> sequence"},
 		"application": {Run: "printf application >> sequence"},
 	}, Components: map[string]config.Component{"svc": {Run: "sleep 60", On: &config.On{Shutdown: []string{"fail", "cleanup"}}}}, On: &config.On{Shutdown: []string{"application"}}}
-	o := NewOrchestrator(cfg, dir)
+	o := NewOrchestratorWithOptions(cfg, dir, Options{StopTimeout: 250 * time.Millisecond})
 	defer o.Close()
 	if err := o.StartComponent("svc"); err != nil {
 		t.Fatal(err)

@@ -61,6 +61,12 @@ func (tm *TaskManager) Run(t *Task) (<-chan Result, error) {
 // RunContext reserves the name before fork/exec. Cancellation is honored even
 // during registration, and completion is delivered exactly once after reaping.
 func (tm *TaskManager) RunContext(parent context.Context, t *Task) (<-chan Result, error) {
+	return tm.RunContextWithFailure(parent, t, nil)
+}
+
+// RunContextWithFailure reports a known failure before stopping the process
+// or draining its output. Completion still waits for both.
+func (tm *TaskManager) RunContextWithFailure(parent context.Context, t *Task, onFailure func(error)) (<-chan Result, error) {
 	tm.mu.Lock()
 	if err := parent.Err(); err != nil {
 		tm.mu.Unlock()
@@ -102,10 +108,18 @@ func (tm *TaskManager) RunContext(parent context.Context, t *Task) (<-chan Resul
 		defer cancel()
 		var runErr error
 		select {
-		case <-runner.WaitChan():
+		case <-runner.ExitChan():
 		case <-ctx.Done():
-			runErr = ctx.Err()
-			runner.Terminate(tm.stopTimeout)
+			// Preserve the result if cancellation races with output draining.
+			select {
+			case <-runner.ExitChan():
+			default:
+				runErr = ctx.Err()
+				if onFailure != nil {
+					onFailure(runErr)
+				}
+				runner.Terminate(tm.stopTimeout)
+			}
 		}
 		code := runner.ExitCode()
 		state := Finished
@@ -113,9 +127,14 @@ func (tm *TaskManager) RunContext(parent context.Context, t *Task) (<-chan Resul
 			state = Failed
 			if runErr == nil {
 				runErr = fmt.Errorf("task %q exited with code %d", cp.Name, code)
+				if onFailure != nil {
+					onFailure(runErr)
+				}
 			}
 		}
-		tm.finish(&cp, Result{State: state, ExitCode: code, Err: runErr}, completion)
+		result := Result{State: state, ExitCode: code, Err: runErr}
+		<-runner.WaitChan()
+		tm.finish(&cp, result, completion)
 	}()
 	return completion, nil
 }

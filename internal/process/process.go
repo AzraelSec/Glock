@@ -21,6 +21,7 @@ const (
 
 // Process is a runtime instance of a Component.
 type Process struct {
+	exit chan ProcessState
 	// Component is the name of the owning Component.
 	Component string
 	// State is the current lifecycle state.

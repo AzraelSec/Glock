@@ -2,6 +2,8 @@ package process
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -307,5 +309,70 @@ func TestManager_Stop_TimeoutEscalation(t *testing.T) {
 	proc, _ := pm.Get("a")
 	if proc.State != Stopped {
 		t.Fatalf("expected Stopped after SIGKILL escalation, got %s", proc.State)
+	}
+}
+
+func TestTrackedExitBelongsToLaunch(t *testing.T) {
+	pm := NewProcessManager(nil, shortTimeout)
+	first, err := pm.StartTracked(StartRequest{Component: "svc", Command: "exit 7"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if p, ok := pm.Get("svc"); ok && p.State == Failed {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first process did not exit")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	second, err := pm.StartTracked(StartRequest{Component: "svc", Command: "true"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		exit <-chan ProcessState
+		want ProcessState
+	}{{first, Failed}, {second, Stopped}} {
+		select {
+		case got := <-tc.exit:
+			if got != tc.want {
+				t.Fatalf("got %s, want %s", got, tc.want)
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("missing exit")
+		}
+	}
+}
+
+func TestStopPreservesLeaderFailureDuringOutputDrain(t *testing.T) {
+	dir := t.TempDir()
+	pm := NewProcessManager(nil, shortTimeout)
+	exit, err := pm.StartTracked(StartRequest{
+		Component: "svc", ExecDir: dir,
+		Command: "(while [ ! -f release ]; do sleep .01; done) & exit 7",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = os.WriteFile(filepath.Join(dir, "release"), nil, 0600)
+		pm.WaitOutput()
+	})
+	select {
+	case state := <-exit:
+		if state != Failed {
+			t.Fatalf("expected failed before output drains, got %s", state)
+		}
+	case <-time.After(drainGracePeriod / 2):
+		t.Fatal("leader outcome blocked by output drain")
+	}
+	if err := pm.Stop("svc"); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("stop of failed process returned %v", err)
+	}
+	if proc, _ := pm.Get("svc"); proc.State != Failed {
+		t.Fatalf("stop changed process failure to %s", proc.State)
 	}
 }

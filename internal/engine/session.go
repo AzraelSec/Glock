@@ -314,6 +314,11 @@ func cloneEvent(e event.Event) event.Event {
 // queue and records dropped fragments instead of blocking producers.
 func OpenProject(project *config.Project) *Session {
 	ctx, cancel := context.WithCancel(context.Background())
+	orch, stats, lines := streamingProject(ctx, project, orchestrator.Options{})
+	return newSession(orch, stats, lines, cancel)
+}
+
+func streamingProject(ctx context.Context, project *config.Project, opts orchestrator.Options) (*orchestrator.Orchestrator, *outputStats, chan process.OutputLine) {
 	lines := make(chan process.OutputLine, 4096)
 	stats := &outputStats{}
 	sink := func(line process.OutputLine) {
@@ -332,8 +337,9 @@ func OpenProject(project *config.Project) *Session {
 			stats.dropped.Add(1)
 		}
 	}
-	orch := orchestrator.NewOrchestratorWithOptions(project.Config, project.Root, orchestrator.Options{Output: sink})
-	return newSession(orch, stats, lines, cancel)
+	opts.Output = sink
+	orch := orchestrator.NewOrchestratorWithOptions(project.Config, project.Root, opts)
+	return orch, stats, lines
 }
 func (s *Session) Output() <-chan process.OutputLine { return s.stream }
 func (s *Session) OutputLoss() runtime.OutputLoss {
