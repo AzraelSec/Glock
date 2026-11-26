@@ -14,6 +14,10 @@ import (
 func TestValidateCommand(t *testing.T) {
 	for _, tc := range []struct{ name, raw, want string }{
 		{"valid", "components: {local: {run: 'touch SHOULD_NOT_EXIST'}}\n", ""},
+		{"explicit empty mapping", "{}\n", ""},
+		{"blank", "", "no YAML document found"},
+		{"whitespace only", " \n  \n", "no YAML document found"},
+		{"comment only", "# Project configuration\n  # Add components here\n", "no YAML document found"},
 		{"v1", "repos: {}\n", "config.repos: field not allowed"},
 		{"schema", "components: {local: {run: 4}}\n", "glock.custom.yml:1:27"},
 		{"references", "components: {local: {run: echo, source: missing}}\n", "missing"},

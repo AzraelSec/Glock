@@ -57,6 +57,31 @@ func TestSetupConfigValidatesBeforeWriting(t *testing.T) {
 	}
 }
 
+func TestRemoteInitRejectsMissingYAMLDocument(t *testing.T) {
+	previous := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = previous })
+	for _, tc := range []struct{ name, raw string }{
+		{"blank", ""},
+		{"whitespace only", " \n  \n"},
+		{"comment only", "# Project configuration\n  # Add sources here\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			http.DefaultTransport = configTransport{http.StatusOK, tc.raw}
+			target := filepath.Join(t.TempDir(), "project")
+			cmd := remoteCommand(dependency.NewManager())
+			cmd.SetArgs([]string{"https://example.invalid/glock.yml", target})
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "no YAML document found") {
+				t.Fatalf("expected missing YAML document error, got %v", err)
+			}
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatalf("expected the destination to remain absent, got %v", err)
+			}
+		})
+	}
+}
+
 func TestInitReportsCloneFailure(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "repo"), 0700); err != nil {

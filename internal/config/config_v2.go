@@ -1,8 +1,10 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -122,7 +124,10 @@ func parseConfigV2(filename string, data []byte) (*ConfigV2, error) {
 	}
 
 	var cfg ConfigV2
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(data))
+	if err := decoder.Decode(&cfg); errors.Is(err, io.EOF) {
+		return nil, errors.New("config validation failed: no YAML document found")
+	} else if err != nil {
 		return nil, fmt.Errorf("yaml decode: %w", err)
 	}
 
