@@ -494,6 +494,28 @@ func TestSourcePaths(t *testing.T) {
 	}
 }
 
+func TestSourceTypeOmissionPreservesSchemaBehavior(t *testing.T) {
+	for _, tc := range []struct {
+		name, source string
+		valid        bool
+	}{
+		{"Git fields select one branch", "{path: repo, url: remote, head: main}", true},
+		{"absolute path selects filesystem", "{path: /opt/tools}", true},
+		{"relative path remains ambiguous", "{path: repo}", false},
+		{"null type is invalid", "{type: null, path: /opt/tools}", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := ParseConfigV2([]byte("version: 2\nsources: {repo: " + tc.source + "}\n"))
+			if (err == nil) != tc.valid {
+				t.Fatalf("valid=%v err=%v", tc.valid, err)
+			}
+			if err == nil && cfg.Sources["repo"].Type != "" {
+				t.Fatalf("omitted type changed during decoding: %q", cfg.Sources["repo"].Type)
+			}
+		})
+	}
+}
+
 func TestComponentSourceExecutionPaths(t *testing.T) {
 	root := t.TempDir()
 	key := "local"
@@ -520,7 +542,14 @@ func TestPairedHookValidation(t *testing.T) {
 	}{
 		{"valid", "on:\n  steps:\n    - {startup: up, cleanup: down}\n", true},
 		{"empty steps", "on:\n  steps: []\n", true},
+		{"empty startup list", "on: {startup: []}\n", true},
+		{"empty project hooks", "on: {}\n", false},
+		{"null project hooks", "on: null\n", false},
+		{"empty component hooks", "components: {c: {run: echo, on: {}}}\n", false},
+		{"null component hooks", "components: {c: {run: echo, on: null}}\n", false},
+		{"scalar project hooks", "on: false\n", false},
 		{"mixed", "on:\n  startup: [up]\n  steps: [{startup: up, cleanup: down}]\n", false},
+		{"empty mixed", "on: {startup: [], steps: []}\n", false},
 		{"missing startup reference", "on:\n  steps: [{startup: missing}]\n", false},
 		{"missing cleanup reference", "on:\n  steps: [{startup: up, cleanup: missing}]\n", false},
 		{"component mixed", "components:\n  c:\n    run: echo\n    on: {shutdown: [down], steps: [{startup: up}]}\n", false},

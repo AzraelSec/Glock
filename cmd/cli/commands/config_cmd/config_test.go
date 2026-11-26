@@ -15,13 +15,13 @@ func TestValidateCommand(t *testing.T) {
 	for _, tc := range []struct{ name, raw, want string }{
 		{"valid", "version: 2\ncomponents: {local: {run: 'touch SHOULD_NOT_EXIST'}}\n", ""},
 		{"v1", "repos: {}\n", "config migrate"},
-		{"schema", "version: 2\ncomponents: {local: {run: 4}}\n", "glock.yml:2"},
+		{"schema", "version: 2\ncomponents: {local: {run: 4}}\n", "glock.custom.yml:2:27"},
 		{"references", "version: 2\ncomponents: {local: {run: echo, source: missing}}\n", "missing"},
 		{"conflict", "version: 1\ncomponents: {}\n", "conflicts"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
-			path := filepath.Join(root, "glock.yml")
+			path := filepath.Join(root, "glock.custom.yml")
 			if err := os.WriteFile(path, []byte(tc.raw), 0600); err != nil {
 				t.Fatal(err)
 			}
@@ -101,5 +101,26 @@ func TestMigrateCommandRequiresExplicitV1Root(t *testing.T) {
 	}
 	if _, err := config.LoadFile(output); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestValidatePrintsNativeDiagnosticsOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "custom.yml")
+	if err := os.WriteFile(path, []byte("version: 2\ntasks: {build: {run: 4}}\ncomponents: {api: {run: false}}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(config.ConfigPathEnv, path)
+	cmd := NewCommand(dependency.NewManager())
+	cmd.SetArgs([]string{"validate"})
+	var stderr bytes.Buffer
+	cmd.SetErr(&stderr)
+	cmd.SilenceUsage = true
+	if err := cmd.Execute(); err == nil {
+		t.Fatal("expected validation failure")
+	}
+	for _, field := range []string{"config.tasks.build.run", "config.components.api.run"} {
+		if strings.Count(stderr.String(), "\n"+field+": conflicting values") != 1 {
+			t.Fatalf("unexpected stderr: %s", stderr.String())
+		}
 	}
 }

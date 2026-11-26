@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 
 	"cuelang.org/go/cue"
@@ -181,9 +182,13 @@ var schemaContext = sync.OnceValue(func() compiledSchema {
 // into Go structs, followed by referential-integrity checks that the
 // schema cannot express (task keys, source keys, component names).
 func ParseConfigV2(data []byte) (*ConfigV2, error) {
+	return parseConfigV2("glock.yml", data)
+}
+
+func parseConfigV2(filename string, data []byte) (*ConfigV2, error) {
 	cs := schemaContext()
 
-	yamlFile, err := cueyaml.Extract("glock.yml", data)
+	yamlFile, err := cueyaml.Extract(filename, data)
 	if err != nil {
 		return nil, fmt.Errorf("invalid YAML: %w", err)
 	}
@@ -194,7 +199,7 @@ func ParseConfigV2(data []byte) (*ConfigV2, error) {
 
 	unified := cs.schema.Unify(dataVal)
 	if err := unified.Validate(cue.Final(), cue.Concrete(true)); err != nil {
-		return nil, fmt.Errorf("config validation failed: %w\n%s", err, cueerrors.Details(err, nil))
+		return nil, fmt.Errorf("config validation failed:\n%s", strings.TrimSuffix(cueerrors.Details(err, nil), "\n"))
 	}
 
 	var cfg ConfigV2
