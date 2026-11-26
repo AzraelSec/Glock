@@ -36,7 +36,7 @@ type RedWriter struct {
 }
 
 func (w RedWriter) Write(p []byte) (n int, err error) {
-	return color.New(color.FgHiRed).Print(string(p))
+	return color.New(color.FgHiRed).Fprint(w.output, string(p))
 }
 
 func ExecuteRoot() {
