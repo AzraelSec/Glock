@@ -3,8 +3,6 @@
 # This file is validated by TestParseConfigV2_ValidExample in
 # internal/config/config_v2_test.go — keep them in sync.
 
-version: 2
-
 # Optional settings used by the existing Git commands.
 tag_pattern: 'v{.Now.Format("20060102.150405")}'
 

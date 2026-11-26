@@ -15,90 +15,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ConfigVersion identifies the major configuration schema.
-type ConfigVersion string
-
-const (
-	VersionV1 ConfigVersion = "v1"
-	VersionV2 ConfigVersion = "v2"
-)
-
-// DetectConfigVersion inspects the raw YAML and returns the schema
-// version it belongs to. An explicit `version` field is authoritative
-// but must agree with the structural hints in the document. An
-// ambiguous document (no recognized keys, or conflicting version hints)
-// is treated as an error so the user gets a clear message instead of a
-// cryptic CUE validation failure.
-func DetectConfigVersion(data []byte) (ConfigVersion, error) {
-	var doc struct {
-		Version string `yaml:"version"`
-	}
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return "", fmt.Errorf("invalid YAML: %w", err)
-	}
-
-	var root map[string]any
-	if err := yaml.Unmarshal(data, &root); err != nil {
-		return "", fmt.Errorf("invalid YAML: %w", err)
-	}
-
-	v1Keys := map[string]bool{"repos": true, "services": true, "root_path": true, "root_main_stream": true}
-	v2Keys := map[string]bool{"sources": true, "components": true, "workspaces": true, "tasks": true}
-
-	var hasV1, hasV2 bool
-	for k := range root {
-		if v1Keys[k] {
-			hasV1 = true
-		}
-		if v2Keys[k] {
-			hasV2 = true
-		}
-	}
-
-	switch {
-	case hasV1 && hasV2:
-		return "", fmt.Errorf("config mixes v1 and v2 keys")
-	case hasV2:
-		detected := VersionV2
-		if doc.Version != "" && !versionMatches(doc.Version, detected) {
-			return "", fmt.Errorf("version field %q conflicts with v2 structural hints", doc.Version)
-		}
-		return detected, nil
-	case hasV1:
-		detected := VersionV1
-		if doc.Version != "" && !versionMatches(doc.Version, detected) {
-			return "", fmt.Errorf("version field %q conflicts with v1 structural hints", doc.Version)
-		}
-		return detected, nil
-	}
-
-	// No structural hints: an explicit version is required.
-	switch doc.Version {
-	case "2", "v2":
-		return VersionV2, nil
-	case "1", "v1":
-		return VersionV1, nil
-	case "":
-		return "", fmt.Errorf("config is missing recognized v1 or v2 keys")
-	default:
-		return "", fmt.Errorf("unsupported config version %q", doc.Version)
-	}
-}
-
-func versionMatches(raw string, v ConfigVersion) bool {
-	switch v {
-	case VersionV1:
-		return raw == "1" || raw == "v1"
-	case VersionV2:
-		return raw == "2" || raw == "v2"
-	}
-	return false
-}
-
 // ConfigV2 is the Go representation of the v2 glock.yml schema.
 type ConfigV2 struct {
 	TagPattern string               `yaml:"tag_pattern,omitempty" json:"tag_pattern,omitempty"`
-	Version    string               `yaml:"version,omitempty" json:"version,omitempty"`
 	Sources    map[string]Source    `yaml:"sources,omitempty" json:"sources,omitempty"`
 	Components map[string]Component `yaml:"components,omitempty" json:"components,omitempty"`
 	Workspaces map[string][]string  `yaml:"workspaces,omitempty" json:"workspaces,omitempty"`

@@ -19,8 +19,9 @@ import (
 
 func TestGitCommandsRejectInapplicableConfiguration(t *testing.T) {
 	for _, tc := range []struct{ name, raw, want string }{
-		{"v1", "repos: {}\n", "config migrate"},
-		{"non-git", "version: 2\ncomponents: {local: {run: echo hello}}\n", "no Git sources"},
+		{"v1", "repos: {}\n", "config.repos: field not allowed"},
+		{"version field", "version: 2\nsources: {repo: {type: github, url: 'git@github.com:org/repo.git', head: main, path: repo}}\n", "config.version: field not allowed"},
+		{"non-git", "components: {local: {run: echo hello}}\n", "no Git sources"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			root := t.TempDir()
@@ -55,23 +56,35 @@ func TestGitCommandsRejectInapplicableConfiguration(t *testing.T) {
 	}
 }
 
-func TestStartRejectsV1AndUnknownFilterBeforeHooks(t *testing.T) {
-	for _, raw := range []string{"repos: {}\n", "version: 2\non: {startup: [side-effect]}\ntasks: {side-effect: {run: touch forbidden}}\n"} {
-		root := t.TempDir()
-		path := filepath.Join(root, "glock.yml")
-		if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
-			t.Fatal(err)
-		}
-		t.Setenv(config.ConfigPathEnv, path)
-		cmd := startFactory(dependency.NewManager())
-		cmd.SetOut(io.Discard)
-		cmd.SetErr(io.Discard)
-		cmd.SetArgs([]string{"--repos", "unknown"})
-		if err := cmd.Execute(); err == nil {
-			t.Fatal("invalid configuration/filter accepted")
-		}
-		if _, err := os.Stat(filepath.Join(root, "forbidden")); !os.IsNotExist(err) {
-			t.Fatal("hook ran before filter validation")
-		}
+func TestStartValidatesConfigAndFilterBeforeHooks(t *testing.T) {
+	const hooks = "on: {startup: [side-effect]}\ntasks: {side-effect: {run: touch forbidden}}\n"
+	for _, tc := range []struct {
+		name string
+		raw  string
+		args []string
+		want string
+	}{
+		{"legacy fields", "repos: {}\n" + hooks, []string{}, "config.repos: field not allowed"},
+		{"version field", "version: 2\n" + hooks, []string{}, "config.version: field not allowed"},
+		{"unknown filter", hooks, []string{"--repos", "unknown"}, "unknown Git source"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "glock.yml")
+			if err := os.WriteFile(path, []byte(tc.raw), 0600); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(config.ConfigPathEnv, path)
+			cmd := startFactory(dependency.NewManager())
+			cmd.SetOut(io.Discard)
+			cmd.SetErr(io.Discard)
+			cmd.SetArgs(tc.args)
+			if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("want %q, got %v", tc.want, err)
+			}
+			if _, err := os.Stat(filepath.Join(root, "forbidden")); !os.IsNotExist(err) {
+				t.Fatal("hook ran before validation")
+			}
+		})
 	}
 }

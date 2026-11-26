@@ -193,8 +193,7 @@ func TestOutputSelectionRevisionRejectsStaleCommands(t *testing.T) {
 func TestLoadFailedInitializationCleansUp(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "glock.yml")
-	raw := `version: 2
-tasks:
+	raw := `tasks:
   fail:
     run: exit 5
   cleanup:
@@ -218,8 +217,7 @@ on:
 func TestLoadContextCancellationCleansUpBeforeFrontendExists(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "glock.yml")
-	raw := `version: 2
-tasks:
+	raw := `tasks:
   setup:
     run: "trap 'exit 130' INT; touch entered; while :; do sleep 0.01; done"
   cleanup:

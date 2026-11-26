@@ -21,13 +21,6 @@ func LoadFile(path string) (*Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	version, err := DetectConfigVersion(raw)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", absolute, err)
-	}
-	if version != VersionV2 {
-		return nil, fmt.Errorf("%s: v1 configuration is no longer supported; run glock config migrate --output <project-root>/glock.yml (move or back up the original first if it occupies that destination)", absolute)
-	}
 	cfg, err := parseConfigV2(absolute, raw)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", absolute, err)

@@ -21,7 +21,7 @@
 ## Config Resolution
 - Config filename is hardcoded to `glock.yml`.
 - Config discovery is: `GLOCK_CONFIG_PATH` if set, otherwise search upward from cwd for the nearest `glock.yml`, up to 20 parent directories.
-- Ordinary commands require v2; v1 is read only by `glock config migrate --output <project-root>/glock.yml`; a relative v1 `root_path` requires `--v1-root <absolute-effective-root>`.
+- CUE validates local and remote project configs against the current schema.
 - The config directory is the project root; every source requires `path`. Remote paths are relative to the root; filesystem paths may be absolute or relative and refer to an existing directory. Git paths cannot lexically be the root; symlinks can resolve outside it.
 - Git commands operate once per `github` source; `head` is its default branch.
 - `glock config validate` runs the real CUE and reference-validation pipeline without starting processes.

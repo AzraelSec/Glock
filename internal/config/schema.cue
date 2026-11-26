@@ -72,8 +72,6 @@ package config
 
 // Root document.
 #Config: {
-	// Optional explicit version. When present it must be 2 or "2".
-	version?: 2 | "2"
 	tag_pattern?: string
 
 	sources?: {

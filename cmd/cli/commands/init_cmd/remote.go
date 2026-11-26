@@ -3,12 +3,12 @@ package init_cmd
 import (
 	"errors"
 	"fmt"
-	"github.com/AzraelSec/glock/internal/config"
 	"io"
 	"net/http"
 	"os"
 	"path"
 
+	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/dir"
 	"github.com/AzraelSec/glock/internal/git"
@@ -32,13 +32,6 @@ func setupConfig(url, targetDir string) (string, error) {
 	}
 	// Validate before creating files or attempting acquisition.
 	finalPath := path.Join(targetDir, "glock.yml")
-	version, err := config.DetectConfigVersion(raw)
-	if err != nil {
-		return "", err
-	}
-	if version != config.VersionV2 {
-		return "", fmt.Errorf("remote v1 configuration is unsupported; download it separately and run glock config migrate")
-	}
 	cfg, err := config.ParseConfigV2(raw)
 	if err != nil {
 		return "", err

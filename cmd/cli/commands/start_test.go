@@ -32,8 +32,7 @@ func TestStartSelection(t *testing.T) {
 }
 
 func TestStartStreamsHooksAndAllLines(t *testing.T) {
-	cfg, err := config.ParseConfigV2([]byte(`version: 2
-components:
+	cfg, err := config.ParseConfigV2([]byte(`components:
   api:
     run: 'i=0; while [ "$i" -lt 12000 ]; do echo "line-$i"; i=$((i+1)); done; echo error >&2'
     on: {startup: [setup], shutdown: [cleanup]}

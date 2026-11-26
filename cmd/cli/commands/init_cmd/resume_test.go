@@ -123,7 +123,7 @@ func TestRemoteFailureResumesWithLocalInit(t *testing.T) {
 	t.Setenv("GIT_CONFIG_COUNT", "1")
 	t.Setenv("GIT_CONFIG_KEY_0", "url.file://"+filepath.ToSlash(remotes)+"/.insteadOf")
 	t.Setenv("GIT_CONFIG_VALUE_0", "git@github.com:example/")
-	raw := fmt.Sprintf("version: 2\nsources:\n  a: {type: github, path: a, url: 'git@github.com:example/a.git', head: %s}\n  b: {type: github, path: b, url: 'git@github.com:example/b.git', head: %s}\n", branch, branch)
+	raw := fmt.Sprintf("sources:\n  a: {type: github, path: a, url: 'git@github.com:example/a.git', head: %s}\n  b: {type: github, path: b, url: 'git@github.com:example/b.git', head: %s}\n", branch, branch)
 	http.DefaultTransport = configTransport{200, raw}
 	target := filepath.Join(root, "project")
 	cmd := remoteCommand(dependency.NewManager())
@@ -179,7 +179,7 @@ func TestInitLocalReportsUnpopulatedCheckoutAndResumesAfterRepair(t *testing.T) 
 	}
 	runGit(t, repo, "remote", "set-url", "origin", origin)
 	configPath := filepath.Join(project, "glock.yml")
-	raw := "version: 2\nsources: {repo: {type: github, path: repo, url: '" + origin + "', head: main}}\n"
+	raw := "sources: {repo: {type: github, path: repo, url: '" + origin + "', head: main}}\n"
 	if err := os.WriteFile(configPath, []byte(raw), 0600); err != nil {
 		t.Fatal(err)
 	}

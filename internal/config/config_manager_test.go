@@ -8,8 +8,7 @@ import (
 )
 
 func TestRepositoryCatalog(t *testing.T) {
-	raw := []byte(`version: 2
-tag_pattern: 'v1'
+	raw := []byte(`tag_pattern: 'v1'
 sources:
   z:
     type: github
@@ -58,7 +57,7 @@ func TestLoadFileRejectsV1(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, err := LoadFile(p)
-	if err == nil || !strings.Contains(err.Error(), "config migrate") {
+	if err == nil || !strings.Contains(err.Error(), "config.repos: field not allowed") {
 		t.Fatal(err)
 	}
 	got, _ := os.ReadFile(p)
@@ -68,7 +67,7 @@ func TestLoadFileRejectsV1(t *testing.T) {
 }
 
 func TestNoApplicableGitSources(t *testing.T) {
-	cfg, err := ParseConfigV2([]byte("version: 2\ncomponents: {local: {run: echo hello}}\n"))
+	cfg, err := ParseConfigV2([]byte("components: {local: {run: echo hello}}\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +82,7 @@ func TestRemoteSourcePathAllowsSymlinkOutsideProject(t *testing.T) {
 	if err := os.Symlink(external, filepath.Join(root, "linked")); err != nil {
 		t.Fatal(err)
 	}
-	raw := []byte("version: 2\nsources: {repo: {type: github, path: linked/repo, url: 'git@github.com:org/repo.git', head: main}}\n")
+	raw := []byte("sources: {repo: {type: github, path: linked/repo, url: 'git@github.com:org/repo.git', head: main}}\n")
 	cfg, err := ParseConfigV2(raw)
 	if err != nil {
 		t.Fatal(err)

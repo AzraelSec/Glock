@@ -1,14 +1,15 @@
 package init_cmd
 
 import (
-	"github.com/AzraelSec/glock/internal/config"
-	"github.com/AzraelSec/glock/internal/dependency"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/AzraelSec/glock/internal/config"
+	"github.com/AzraelSec/glock/internal/dependency"
 )
 
 type configTransport struct {
@@ -23,8 +24,13 @@ func (r configTransport) RoundTrip(*http.Request) (*http.Response, error) {
 func TestSetupConfigValidatesBeforeWriting(t *testing.T) {
 	previous := http.DefaultTransport
 	defer func() { http.DefaultTransport = previous }()
+	const sources = "sources: {x: {type: github, url: 'git@github.com:org/repo.git', head: main, path: repo}}\n"
 	for _, tc := range []configTransport{
-		{404, "not found"}, {200, "repos: {}"}, {200, "version: 2\ncomponents: {x: {run: echo}}"}, {200, "version: 2\nsources: {x: {type: github}}"},
+		{404, "not found"},
+		{200, "repos: {}\n"},
+		{200, "version: 2\n" + sources},
+		{200, "components: {x: {run: echo}}"},
+		{200, "sources: {x: {type: github}}"},
 	} {
 		http.DefaultTransport = tc
 		dir := filepath.Join(t.TempDir(), "project")
@@ -35,7 +41,7 @@ func TestSetupConfigValidatesBeforeWriting(t *testing.T) {
 			t.Fatal("invalid config created destination")
 		}
 	}
-	http.DefaultTransport = configTransport{200, "version: 2\nsources: {x: {type: github, url: 'git@github.com:org/repo.git', head: main, path: repo}}"}
+	http.DefaultTransport = configTransport{200, sources}
 	dir := filepath.Join(t.TempDir(), "project")
 	path, err := setupConfig("https://example.invalid/config", dir)
 	if err != nil {
@@ -56,7 +62,7 @@ func TestInitReportsCloneFailure(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "repo"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	raw := "version: 2\nsources: {x: {type: github, url: 'git@github.com:org/repo.git', head: main, path: repo}}\n"
+	raw := "sources: {x: {type: github, url: 'git@github.com:org/repo.git', head: main, path: repo}}\n"
 	path := filepath.Join(root, "glock.yml")
 	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
 		t.Fatal(err)

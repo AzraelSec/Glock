@@ -383,35 +383,6 @@ tasks:
 	}
 }
 
-func TestDetectConfigVersion_Explicit(t *testing.T) {
-	tests := []struct {
-		name    string
-		src     string
-		want    ConfigVersion
-		wantErr bool
-	}{
-		{"v2 explicit", "version: 2\ncomponents:\n  web:\n    run: x", VersionV2, false},
-		{"v2 explicit string", "version: \"2\"\n", VersionV2, false},
-		{"v1 explicit", "version: 1\nrepos: {}", VersionV1, false},
-		{"v2 structural", "components:\n  web:\n    run: x", VersionV2, false},
-		{"v1 structural", "repos:\n  a:\n    remote: x", VersionV1, false},
-		{"mixed", "version: 2\nrepos: {}\ncomponents: {}", "", true},
-		{"empty", "", "", true},
-		{"unknown version", "version: 3\n", "", true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := DetectConfigVersion([]byte(tt.src))
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("DetectConfigVersion error = %v, wantErr %v", err, tt.wantErr)
-			}
-			if got != tt.want {
-				t.Errorf("DetectConfigVersion = %q, want %q", got, tt.want)
-			}
-		})
-	}
-}
-
 func TestParseConfigV2_OutTraversalRejected(t *testing.T) {
 	const src = `
 sources:
@@ -486,7 +457,7 @@ func TestSourcePaths(t *testing.T) {
 		{"filesystem missing", `type: filesystem`, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParseConfigV2([]byte("version: 2\nsources:\n  src: {" + tc.source + "}\n"))
+			_, err := ParseConfigV2([]byte("sources:\n  src: {" + tc.source + "}\n"))
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%v err=%v", tc.valid, err)
 			}
@@ -505,7 +476,7 @@ func TestSourceTypeOmissionPreservesSchemaBehavior(t *testing.T) {
 		{"null type is invalid", "{type: null, path: /opt/tools}", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := ParseConfigV2([]byte("version: 2\nsources: {repo: " + tc.source + "}\n"))
+			cfg, err := ParseConfigV2([]byte("sources: {repo: " + tc.source + "}\n"))
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%v err=%v", tc.valid, err)
 			}
@@ -555,7 +526,7 @@ func TestPairedHookValidation(t *testing.T) {
 		{"component mixed", "components:\n  c:\n    run: echo\n    on: {shutdown: [down], steps: [{startup: up}]}\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := ParseConfigV2([]byte("version: 2\ntasks:\n  up: {run: echo}\n  down: {run: echo}\n" + tc.raw))
+			_, err := ParseConfigV2([]byte("tasks:\n  up: {run: echo}\n  down: {run: echo}\n" + tc.raw))
 			if (err == nil) != tc.valid {
 				t.Fatalf("valid=%v err=%v", tc.valid, err)
 			}
