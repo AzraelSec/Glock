@@ -29,6 +29,8 @@ type Git interface {
 	Pull(repo Repo, rebase bool) error
 	PullBranch(repo Repo, branch BranchName, rebase bool) error
 	ListBranches(repo Repo) ([]BranchName, error)
+	HasRemoteBranch(repo Repo, branch BranchName) (bool, error)
+	CheckTag(repo Repo, tag string, ref BranchName) error
 	CreateLightweightTag(repo Repo, tag string, branch BranchName) error
 	PushTag(repo Repo, tag Tag, remote Remote) error
 }

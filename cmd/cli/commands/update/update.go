@@ -23,6 +23,9 @@ type updateOutputPayload struct {
 
 func updateStart(ctx context.Context, out io.Writer, payload updateInputPayload) (updateOutputPayload, error) {
 	res := updateOutputPayload{}
+	if err := ctx.Err(); err != nil {
+		return res, err
+	}
 	if !dir.DirExists(payload.RepoPath) {
 		return res, config.ErrRepoNotFound
 	}
@@ -123,7 +126,7 @@ func (u *update) Command() *cobra.Command {
 			if *disableTui {
 				newCli(u.cm.Repos, *output).run()
 			} else {
-				return newTui(u.cm.Repos).run()
+				return u.runTui(cmd)
 			}
 
 			return nil

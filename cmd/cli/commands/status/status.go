@@ -5,14 +5,14 @@ import (
 	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/dir"
 	"github.com/AzraelSec/glock/internal/git"
-	"github.com/AzraelSec/glock/internal/runner"
 	"github.com/spf13/cobra"
 )
 
 type statusOutputPayload struct {
-	branch     string
-	dirty      bool
-	remoteDiff bool
+	branch              string
+	dirty               bool
+	remoteDiff          bool
+	upstreamUnavailable bool
 }
 
 type status struct {
@@ -32,26 +32,14 @@ func (s *status) statusRepo(gr git.Repo) (statusOutputPayload, error) {
 	if err != nil {
 		return res, err
 	}
-	diff, _ := s.g.DiffersFromRemote(gr)
+	diff, diffErr := s.g.DiffersFromRemote(gr)
 
 	res.branch = string(status.Branch)
 	res.dirty = status.Change
 	res.remoteDiff = diff
+	res.upstreamUnavailable = diffErr != nil
 
 	return res, nil
-}
-
-func (s *status) collect() []runner.Result[statusOutputPayload] {
-	statusArgs := make([]git.Repo, 0, len(s.cm.Repos))
-	statusFn := func(gr git.Repo) (statusOutputPayload, error) {
-		return s.statusRepo(gr)
-	}
-
-	for _, repo := range s.cm.Repos {
-		statusArgs = append(statusArgs, repo.GitConfig)
-	}
-
-	return runner.Run(statusFn, statusArgs)
 }
 
 func NewStatus(dm *dependency.Manager) *status {
@@ -67,15 +55,13 @@ func NewStatus(dm *dependency.Manager) *status {
 func (s *status) Command() *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Retrieves the current branch on each repo",
+		Short: "Show the current branch and Git status for each repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if s.err != nil {
 				return s.err
 			}
 
-			// todo: add CLI version
-			s.runTui()
-			return nil
+			return s.runTui(cmd)
 		},
 	}
 }

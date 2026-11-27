@@ -88,6 +88,16 @@ absolute or relative to the project root. Components and their hooks run there.
 `status`, `switch`, `reset`, `init`, `update`, and `tag` operate once per Git
 source, ignoring non-Git sources. Acquisition for other source types is not
 implemented by `init`.
+- `glock status` groups repositories that need attention ahead of clean repositories.
+- `glock switch` opens a searchable branch picker. Enter reviews the impact, and
+  Enter again applies the switch to eligible repositories. Use
+  `glock switch <branch>` to switch directly.
+- `glock tag --preview` prints the planned tag, source ref, and destination for each
+  repository. Combine it with `--skip-push`, `--current`, and `--pre-pull=false`
+  to preview the same options you would use for tagging.
+- In `glock update`, use ↑/↓ to select a failure and Enter to expand its details.
+  Press `q` or Esc to close the results once updates finish.
+
 For a Git source pinned to a tag, `reset` checks out that tag in detached HEAD
 and skips the pull. A local branch takes precedence if it has the same name.
 

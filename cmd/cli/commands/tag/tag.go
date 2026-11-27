@@ -22,9 +22,10 @@ type tagCmd struct {
 }
 
 type tagOutputPayload struct {
-	branch string
-	remote string
-	tag    string
+	branch  string
+	remote  string
+	tag     string
+	created bool
 }
 
 type tagInputPayload struct {
@@ -36,7 +37,7 @@ type tagInputPayload struct {
 	push          bool
 }
 
-func createTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
+func resolveTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
 	res := tagOutputPayload{}
 	if !dir.DirExists(input.gr.Path) {
 		return res, config.ErrRepoNotFound
@@ -56,13 +57,6 @@ func createTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
 		res.branch = string(br)
 	}
 
-	if input.pull {
-		err := g.PullBranch(input.gr, git.BranchName(res.branch), false)
-		if err != nil {
-			return res, fmt.Errorf("impossible to pull the %s branch - %w", res.branch, err)
-		}
-	}
-
 	var hydrated bytes.Buffer
 	if err := tmpl.Execute(&hydrated, input.sharedContext.NewTagContext(res.branch)); err != nil {
 		return res, err
@@ -70,9 +64,25 @@ func createTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
 
 	res.tag = hydrated.String()
 
+	return res, nil
+}
+
+func createTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
+	res, err := resolveTag(g, input)
+	if err != nil {
+		return res, err
+	}
+	if input.pull {
+		if err := g.PullBranch(input.gr, git.BranchName(res.branch), false); err != nil {
+			return res, fmt.Errorf("pull %s: %w", res.branch, err)
+		}
+	}
+
 	if err := g.CreateLightweightTag(input.gr, res.tag, git.BranchName(res.branch)); err != nil {
 		return res, fmt.Errorf("impossible to create the lightweight tag on branch %s - %w", res.branch, err)
 	}
+
+	res.created = true
 
 	if !input.push {
 		return res, nil
@@ -82,15 +92,23 @@ func createTag(g git.Git, input tagInputPayload) (tagOutputPayload, error) {
 	if err != nil {
 		return res, fmt.Errorf("impossible to list remotes - %w", err)
 	}
-	if len(remotes) != 1 {
-		return res, errors.New("impossible to push tag on repos with multiple remotes")
+	remote, err := pushRemote(remotes)
+	if err != nil {
+		return res, err
 	}
-	res.remote = string(remotes[0])
+	res.remote = string(remote)
 
-	if err := g.PushTag(input.gr, git.Tag(res.tag), remotes[0]); err != nil {
-		return res, fmt.Errorf("impossible to push tag %s on %s - %w", res.tag, string(remotes[0]), err)
+	if err := g.PushTag(input.gr, git.Tag(res.tag), remote); err != nil {
+		return res, fmt.Errorf("impossible to push tag %s on %s - %w", res.tag, res.remote, err)
 	}
 	return res, nil
+}
+
+func pushRemote(remotes []git.Remote) (git.Remote, error) {
+	if len(remotes) != 1 {
+		return "", fmt.Errorf("pushing a tag requires exactly one remote (found %d)", len(remotes))
+	}
+	return remotes[0], nil
 }
 
 func New(dm *dependency.Manager) *tagCmd {
@@ -130,7 +148,7 @@ func runnerArgs(g git.Git, repos []config.LiveRepo, tagPattern string, useCurren
 }
 
 func (t *tagCmd) Command() *cobra.Command {
-	var disableTui, useCurrent, skipPush, pullBefore *bool
+	var disableTui, useCurrent, skipPush, pullBefore, preview *bool
 
 	cmd := &cobra.Command{
 		Use:     "tag",
@@ -154,19 +172,23 @@ func (t *tagCmd) Command() *cobra.Command {
 			}
 
 			if len(repos) == 0 {
-				fmt.Println(ui.YELLOW.Render("no repos available for tagging"))
-				return nil
+				_, err := fmt.Fprintln(cmd.OutOrStdout(), ui.YELLOW.Render("no repos available for tagging"))
+				return err
 			}
 
+			if *preview {
+				return t.preview(cmd, repos, *useCurrent, *skipPush, *pullBefore)
+			}
 			isYeet := cmd.CalledAs() == "yeet"
 			if !*disableTui {
-				return newTui(t.g, repos, t.cm.TagPattern, *useCurrent, *skipPush, *pullBefore, isYeet).run()
+				return t.runTui(cmd, repos, *useCurrent, *skipPush, *pullBefore, isYeet)
 			}
 			newCli(t.g, repos, t.cm.TagPattern, *useCurrent, *skipPush, *pullBefore, isYeet).run()
 			return nil
 		},
 	}
 
+	preview = cmd.Flags().Bool("preview", false, "Show the per-repository tag plan without applying it")
 	disableTui = cmd.Flags().Bool("disableTui", false, "Disable TUI")
 	useCurrent = cmd.Flags().BoolP("current", "c", false, "Use current branch instead of the main branch")
 	skipPush = cmd.Flags().BoolP("skip-push", "s", false, "Avoid pushing the tags on remote")

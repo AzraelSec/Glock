@@ -60,6 +60,14 @@ func (m *mockGit) PullBranch(repo git.Repo, branch git.BranchName, rebase bool) 
 	return nil
 }
 
+func (m *mockGit) HasRemoteBranch(_ git.Repo, _ git.BranchName) (bool, error) {
+	return false, nil
+}
+
+func (m *mockGit) CheckTag(_ git.Repo, _ string, _ git.BranchName) error {
+	return nil
+}
+
 func (m *mockGit) ListBranches(repo git.Repo) ([]git.BranchName, error) {
 	return nil, nil
 }

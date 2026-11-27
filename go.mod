@@ -10,6 +10,7 @@ require (
 	github.com/muesli/ansi v0.0.0-20211018074035-2e021307bc4b
 	github.com/muesli/reflow v0.3.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/term v0.46.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -41,7 +42,6 @@ require (
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.23.0 // indirect
-	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/protobuf v1.33.0 // indirect

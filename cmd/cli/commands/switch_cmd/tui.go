@@ -1,248 +1,316 @@
 package switchcmd
 
 import (
+	"errors"
 	"fmt"
-	"io"
 	"slices"
 	"strings"
 
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/dir"
 	"github.com/AzraelSec/glock/internal/git"
+	"github.com/AzraelSec/glock/internal/routine"
 	"github.com/AzraelSec/glock/internal/runner"
-	"github.com/AzraelSec/glock/internal/utils"
+	"github.com/AzraelSec/glock/internal/ui"
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
+	"github.com/charmbracelet/bubbles/paginator"
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/spf13/cobra"
 )
 
-type tui struct {
-	*switchGit
+func (sg *switchGit) runPicker(cmd *cobra.Command, force bool) error {
+	in, out := cmd.InOrStdin(), cmd.OutOrStdout()
+	width, height := ui.TerminalSize(out)
+	if !ui.IsInteractive(in, out) {
+		return errors.New("provide a branch with glock switch <branch> when running without an interactive terminal")
+	}
+
+	picker := newBranchPicker(sg.collectBranches, lipgloss.NewRenderer(out), force)
+	picker.inspect = func(branch string) []branchImpact { return sg.branchImpact(branch, force) }
+	picker.resize(width, height)
+	if _, err := tea.NewProgram(picker, tea.WithInput(in), tea.WithOutput(out), tea.WithAltScreen()).Run(); err != nil {
+		return err
+	}
+	if picker.target == "" {
+		return nil
+	}
+	if !force && !routine.AllClean(sg.repos, sg.Git) {
+		return errors.New("repositories changed during review; commit or stash local changes before switching")
+	}
+	return sg.runSwitch(cmd, in, picker.target, force, picker.review.repos)
 }
 
-func newTui(sg *switchGit) *tui {
-	return &tui{switchGit: sg}
+type branchesLoaded struct {
+	names    []string
+	failures int
+	firstErr error
 }
 
-func (t *tui) collectBranches(repo git.Repo) ([]string, error) {
-	brs := make([]string, 0)
-	if !dir.DirExists(repo.Path) {
-		return brs, config.ErrRepoNotFound
-	}
+func (sg *switchGit) collectBranches() branchesLoaded {
+	results := runner.Run(func(repo config.LiveRepo) ([]git.BranchName, error) {
+		if !dir.DirExists(repo.GitConfig.Path) {
+			return nil, config.ErrRepoNotFound
+		}
+		return sg.ListBranches(repo.GitConfig)
+	}, sg.repos)
 
-	res, err := t.ListBranches(repo)
-	if err != nil {
-		return brs, err
-	}
-
-	for _, br := range res {
-		brs = append(brs, string(br))
-	}
-	return brs, nil
-}
-
-func (t *tui) collectAllBranches() []string {
-	brsArgs := make([]git.Repo, 0, len(t.repos))
-	for _, repo := range t.repos {
-		brsArgs = append(brsArgs, repo.GitConfig)
-	}
-	brsFn := func(repo git.Repo) ([]string, error) {
-		return t.collectBranches(repo)
-	}
-
-	results := runner.Run(brsFn, brsArgs)
-
-	brs := make([]string, 0)
-	for _, item := range results {
-		if item.Error != nil {
+	var loaded branchesLoaded
+	names := make(map[string]struct{})
+	for i, result := range results {
+		if result.Error != nil {
+			loaded.failures++
+			if loaded.firstErr == nil {
+				loaded.firstErr = fmt.Errorf("%s: %w", sg.repos[i].Name, result.Error)
+			}
 			continue
 		}
-		brs = append(brs, item.Res...)
-	}
-
-	res := utils.Uniq(brs)
-	slices.Sort(res)
-	return res
-}
-
-func (t *tui) initModel(force bool) *model {
-	l := list.New([]list.Item{}, itemDelegate{}, 20, 14)
-	l.Styles.PaginationStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
-	l.Styles.HelpStyle = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
-	l.Styles.TitleBar = lipgloss.NewStyle().MarginLeft(2)
-
-	return &model{
-		status: LOADING_LIST,
-		force:  force,
-
-		results: make([]runner.Result[struct{}], 0),
-
-		getBranches: t.collectAllBranches,
-		startSwitch: func(b string) []runner.Result[struct{}] {
-			return t.performSwitch(b, force)
-		},
-
-		list:    l,
-		spinner: spinner.New(spinner.WithSpinner(spinner.Points)),
-	}
-}
-
-func (t *tui) run(force bool) {
-	program := tea.NewProgram(t.initModel(force))
-	m, err := program.Run()
-	if err != nil {
-		panic(err)
-	}
-
-	tm := m.(*model)
-	if tm.status != DONE {
-		return
-	}
-
-	printResults(t.repos, tm.results)
-}
-
-const (
-	LOADING_LIST = iota
-	READY
-	SWITCHING
-	DONE
-)
-
-type status int
-
-type model struct {
-	status status
-	force  bool
-
-	results []runner.Result[struct{}]
-
-	getBranches func() []string
-	startSwitch func(string) []runner.Result[struct{}]
-
-	spinner spinner.Model
-	list    list.Model
-}
-
-type branchesListDoneMsg []string
-
-func (t *model) fetchBranches() tea.Msg {
-	branches := t.getBranches()
-	return branchesListDoneMsg(branches)
-}
-
-type (
-	switchStartMsg string
-	switchDoneMsg  struct{}
-)
-
-func switchStart(item item) tea.Cmd {
-	return func() tea.Msg {
-		return switchStartMsg(item)
-	}
-}
-
-func (m *model) switchRun(target string) tea.Cmd {
-	return func() tea.Msg {
-		m.results = m.startSwitch(target)
-		return switchDoneMsg{}
-	}
-}
-
-var (
-	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
-	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
-)
-
-type item string
-
-func (i item) FilterValue() string { return string(i) }
-
-type itemDelegate struct{}
-
-func (d itemDelegate) Height() int                             { return 1 }
-func (d itemDelegate) Spacing() int                            { return 0 }
-func (d itemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
-func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
-	i, ok := listItem.(item)
-	if !ok {
-		return
-	}
-
-	str := fmt.Sprintf("%d. %s", index+1, i)
-
-	fn := itemStyle.Render
-	if index == m.Index() {
-		fn = func(s ...string) string {
-			return selectedItemStyle.Render("> " + strings.Join(s, " "))
+		for _, branch := range result.Res {
+			if branch != "" {
+				names[string(branch)] = struct{}{}
+			}
 		}
 	}
-
-	fmt.Fprint(w, fn(str))
+	for name := range names {
+		loaded.names = append(loaded.names, name)
+	}
+	slices.Sort(loaded.names)
+	return loaded
 }
 
-func (m *model) Init() tea.Cmd {
-	return tea.Batch(m.fetchBranches, m.spinner.Tick)
+type branchItem string
+
+func (b branchItem) Title() string       { return ui.SingleLine(string(b)) }
+func (b branchItem) Description() string { return "" }
+func (b branchItem) FilterValue() string { return b.Title() }
+
+var chooseBranch = key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "review"))
+var dismissPicker = key.NewBinding(key.WithKeys("q", "esc", "ctrl+c"), key.WithHelp("q/esc", "quit"))
+
+type filterMatches struct {
+	revision int
+	matches  list.FilterMatchesMsg
 }
 
-func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	cmds := make([]tea.Cmd, 0)
+// Keep asynchronous Bubbles filter results tied to the query that produced them.
+func trackFilter(cmd tea.Cmd, revision int) tea.Cmd {
+	if cmd == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		switch msg := cmd().(type) {
+		case list.FilterMatchesMsg:
+			return filterMatches{revision, msg}
+		case tea.BatchMsg:
+			for i, sub := range msg {
+				msg[i] = trackFilter(sub, revision)
+			}
+			return msg
+		default:
+			return msg
+		}
+	}
+}
 
+type branchPicker struct {
+	load     func() branchesLoaded
+	renderer *lipgloss.Renderer
+	spinner  spinner.Model
+	list     list.Model
+	force    bool
+
+	width, height  int
+	loaded         bool
+	failures       int
+	firstErr       error
+	target         string
+	filterRevision int
+	filterPending  bool
+	inspect        func(string) []branchImpact
+	reviewRevision int
+	review         *branchReview
+}
+
+func newBranchPicker(load func() branchesLoaded, renderer *lipgloss.Renderer, force bool) *branchPicker {
+	delegate := list.NewDefaultDelegate()
+	delegate.ShowDescription = false
+	delegate.SetSpacing(0)
+	delegate.Styles.NormalTitle = renderer.NewStyle().PaddingLeft(2)
+	delegate.Styles.DimmedTitle = ui.Muted(renderer).PaddingLeft(2)
+	delegate.Styles.SelectedTitle = ui.Title(renderer).
+		Border(lipgloss.NormalBorder(), false, false, false, true).
+		PaddingLeft(1)
+	delegate.ShortHelpFunc = func() []key.Binding { return []key.Binding{chooseBranch} }
+	delegate.FullHelpFunc = func() [][]key.Binding { return [][]key.Binding{{chooseBranch}} }
+
+	l := list.New(nil, delegate, 8, 1)
+	l.Title = "Switch branch"
+	l.Styles.Title = ui.Title(renderer)
+	l.Styles.TitleBar = renderer.NewStyle()
+	l.Styles.StatusBar = ui.Muted(renderer)
+	l.Styles.StatusEmpty = ui.Muted(renderer)
+	l.Styles.NoItems = ui.Muted(renderer).PaddingLeft(2)
+	l.Styles.PaginationStyle = ui.Muted(renderer).PaddingLeft(2)
+	l.Styles.ArabicPagination = ui.Muted(renderer)
+	l.Styles.HelpStyle = renderer.NewStyle()
+	l.Help = ui.NewHelp(renderer)
+	l.Help.ShortSeparator = "  "
+	l.FilterInput.Prompt = "Filter: "
+	l.FilterInput.PromptStyle = ui.Title(renderer)
+	l.SetStatusBarItemName("branch", "branches")
+	l.Paginator.Type = paginator.Arabic
+	l.KeyMap.CursorUp.SetHelp("↑", "up")
+	l.KeyMap.CursorDown.SetHelp("↓", "down")
+	l.KeyMap.Quit.SetHelp("q/esc", "quit")
+	l.KeyMap.AcceptWhileFiltering.SetKeys("enter")
+
+	return &branchPicker{load: load, renderer: renderer, spinner: ui.NewSpinner(renderer), list: l, force: force}
+}
+
+func (p *branchPicker) Init() tea.Cmd {
+	return tea.Batch(p.spinner.Tick, func() tea.Msg { return p.load() })
+}
+
+func (p *branchPicker) resize(width, height int) {
+	p.width, p.height = width, height
+	if p.review != nil {
+		p.resizeReview()
+	}
+	p.list.SetShowStatusBar(height >= 7)
+	p.list.SetShowHelp(height >= 7)
+	p.list.SetShowPagination(height >= 5)
+	if (p.force || p.failures > 0) && height >= 3 {
+		height--
+	}
+	p.list.SetSize(max(4, min(100, width-3)), max(1, height))
+	p.updatePageKeys()
+}
+
+func (p *branchPicker) updatePageKeys() {
+	canPage := p.list.FilterState() != list.Filtering && p.list.Paginator.TotalPages > 1
+	p.list.KeyMap.PrevPage.SetEnabled(canPage)
+	p.list.KeyMap.NextPage.SetEnabled(canPage)
+}
+
+func (p *branchPicker) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
-		m.list.SetWidth(msg.Width)
-		return m, nil
-
+		p.resize(msg.Width, msg.Height)
+		return p, nil
+	case impactLoaded:
+		p.setReview(msg)
+		return p, nil
+	case branchesLoaded:
+		p.loaded = true
+		p.failures, p.firstErr = msg.failures, msg.firstErr
+		items := make([]list.Item, 0, len(msg.names))
+		for _, name := range msg.names {
+			items = append(items, branchItem(name))
+		}
+		cmd := p.list.SetItems(items)
+		p.resize(p.width, p.height)
+		return p, cmd
+	case spinner.TickMsg:
+		if p.loaded && (p.review == nil || p.review.repos != nil) {
+			return p, nil
+		}
+		var cmd tea.Cmd
+		p.spinner, cmd = p.spinner.Update(msg)
+		return p, cmd
+	case filterMatches:
+		if msg.revision != p.filterRevision || p.list.FilterState() != list.Filtering {
+			return p, nil
+		}
+		p.filterPending = false
+		p.list, _ = p.list.Update(msg.matches)
+		p.resize(p.width, p.height)
+		return p, nil
 	case tea.KeyMsg:
-		if m.status != READY {
-			break
+		if p.review != nil {
+			return p.reviewUpdate(msg)
 		}
-
-		switch keypress := msg.String(); keypress {
-		case "ctrl+c":
-			return m, tea.Quit
-		case "enter":
-			m.status = SWITCHING
-			item := m.list.SelectedItem().(item)
-			return m, switchStart(item)
+		if !p.loaded || len(p.list.Items()) == 0 {
+			if key.Matches(msg, dismissPicker) {
+				return p, tea.Quit
+			}
+			return p, nil
 		}
-
-	case branchesListDoneMsg:
-		its := make([]list.Item, 0, len(msg))
-		for _, it := range msg {
-			its = append(its, item(it))
+		if key.Matches(msg, chooseBranch) {
+			if p.list.FilterState() == list.Filtering {
+				if p.filterPending || len(p.list.VisibleItems()) == 0 {
+					return p, nil
+				}
+				return p.updateList(msg)
+			}
+			if item, ok := p.list.SelectedItem().(branchItem); ok {
+				return p, p.startReview(string(item))
+			}
+			return p, nil
 		}
-		m.status = READY
-		return m, m.list.SetItems(its)
-
-	case switchStartMsg:
-		cmds = append(cmds, m.switchRun(string(msg)))
-
-	case switchDoneMsg:
-		m.status = DONE
-		return m, tea.Quit
 	}
 
-	var listCmd tea.Cmd
-	m.list, listCmd = m.list.Update(msg)
-
-	var spinnerCmd tea.Cmd
-	m.spinner, spinnerCmd = m.spinner.Update(msg)
-	cmds = append(cmds, listCmd, spinnerCmd)
-
-	return m, tea.Batch(cmds...)
+	if p.review != nil {
+		return p.reviewUpdate(msg)
+	}
+	if !p.loaded {
+		return p, nil
+	}
+	return p.updateList(msg)
 }
 
-func (m *model) View() string {
-	switch m.status {
-	case LOADING_LIST:
-		return fmt.Sprintf("%s loading list...\n", m.spinner.View())
-	case READY:
-		return m.list.View()
-	case SWITCHING:
-		return fmt.Sprintf("%s switching...\n", m.spinner.View())
-	default:
+func (p *branchPicker) updateList(msg tea.Msg) (tea.Model, tea.Cmd) {
+	previousQuery := p.list.FilterValue()
+	var cmd tea.Cmd
+	p.list, cmd = p.list.Update(msg)
+	if p.list.FilterValue() != previousQuery {
+		p.filterRevision++
+		p.filterPending = p.list.FilterState() == list.Filtering
+		if p.filterPending {
+			cmd = trackFilter(cmd, p.filterRevision)
+		}
+	}
+	return p, cmd
+}
+
+func (p *branchPicker) View() string {
+	if p.target != "" {
 		return ""
 	}
+
+	var view string
+	switch {
+	case p.review != nil:
+		view = p.reviewView()
+	case !p.loaded:
+		view = ui.Title(p.renderer).Render("Switch branch") + "\n" +
+			p.spinner.View() + " Loading local branches"
+	case len(p.list.Items()) == 0:
+		message := "No local branches found."
+		if p.firstErr != nil {
+			message += " " + ui.ErrorDetail(p.firstErr)
+		}
+		view = ui.Title(p.renderer).Render("Switch branch") + "\n" + message +
+			"\n\n" + ui.Muted(p.renderer).Render("q / esc to close")
+	default:
+		var notes []string
+		if p.force {
+			notes = append(notes, "Force enabled. Local changes may be discarded.")
+		}
+		if p.failures > 0 {
+			unavailable := fmt.Sprintf("%d repositories unavailable", p.failures)
+			if p.failures == 1 {
+				unavailable = "1 repository unavailable"
+			}
+			notes = append(notes, unavailable)
+		}
+		view = p.list.View()
+		if len(notes) > 0 && p.height >= 3 {
+			heading, body, _ := strings.Cut(view, "\n")
+			view = heading + "\n" + ui.Muted(p.renderer).Render(strings.Join(notes, " · ")) + "\n" + body
+		}
+	}
+
+	return ui.Fit(lipgloss.NewStyle().PaddingLeft(2).Render(view), p.width, p.height)
 }

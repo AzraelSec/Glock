@@ -2,17 +2,14 @@ package switchcmd
 
 import (
 	"errors"
-	"fmt"
-	"os"
+	"io"
 
 	"github.com/AzraelSec/glock/internal/config"
 	"github.com/AzraelSec/glock/internal/dependency"
 	"github.com/AzraelSec/glock/internal/dir"
 	"github.com/AzraelSec/glock/internal/git"
 	"github.com/AzraelSec/glock/internal/routine"
-	"github.com/AzraelSec/glock/internal/runner"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	"github.com/AzraelSec/glock/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -43,65 +40,41 @@ func (sg *switchGit) switchRepo(payload switchInputPayload) error {
 	)
 }
 
-func (sg *switchGit) performSwitch(branch string, force bool) []runner.Result[struct{}] {
-	switchArgs := make([]switchInputPayload, 0, len(sg.repos))
-	switchFn := func(args switchInputPayload) (struct{}, error) {
-		return struct{}{}, sg.switchRepo(args)
-	}
-
-	for _, repo := range sg.repos {
-		switchArgs = append(switchArgs, switchInputPayload{
-			targetBranch: branch,
-			force:        force,
-			gitRepo:      repo.GitConfig,
-		})
-	}
-
-	return runner.Run(switchFn, switchArgs)
-}
-
-func printResults(repos []config.LiveRepo, results []runner.Result[struct{}]) {
-	re := lipgloss.NewRenderer(os.Stdout)
-	baseStyle := re.NewStyle().
-		Padding(0, 1)
-	headerStyle := baseStyle.Copy().
-		Foreground(lipgloss.Color("252")).
-		Bold(true)
-	headers := []string{"REPO", "STATUS"}
-
-	touched := false
-	switchedData := make([][]string, 0)
-	for idx, res := range results {
-		if res.Error == nil {
-			touched = true
-			switchedData = append(switchedData, []string{repos[idx].Name, "Done!"})
-			continue
-		}
-
-		if !errors.Is(res.Error, git.ErrInvalidReference) {
-			touched = true
-			switchedData = append(switchedData, []string{repos[idx].Name, results[idx].Error.Error()})
+func (sg *switchGit) runSwitch(cmd *cobra.Command, in io.Reader, branch string, force bool, plan []branchImpact) error {
+	if plan == nil {
+		plan = make([]branchImpact, 0, len(sg.repos))
+		for _, repo := range sg.repos {
+			plan = append(plan, branchImpact{repo: repo, kind: eligible})
 		}
 	}
-
-	if !touched {
-		fmt.Println("Done, but no repos changed its current branch!")
-		return
-	}
-
-	switchedTable := table.New().
-		Border(lipgloss.RoundedBorder()).
-		Headers(headers...).
-		BorderStyle(re.NewStyle().Foreground(lipgloss.Color("238"))).
-		Rows(switchedData...).
-		StyleFunc(func(row, col int) lipgloss.Style {
-			if row == 0 {
-				return headerStyle
+	tasks := make([]ui.Task, 0, len(plan))
+	for _, impact := range plan {
+		repo := impact.repo
+		tasks = append(tasks, ui.Task{Name: repo.Name, Run: func() ui.Result {
+			switch impact.kind {
+			case alreadyOnBranch:
+				return ui.Result{Outcome: ui.Skipped, Label: "Already on branch"}
+			case branchUnavailable:
+				return ui.Result{Outcome: ui.Skipped, Label: "Skipped", Detail: impact.detail}
+			case unavailable:
+				return ui.Result{Outcome: ui.Failure, Label: "Unavailable", Detail: impact.detail}
 			}
-			return baseStyle
-		})
+			err := sg.switchRepo(switchInputPayload{gitRepo: repo.GitConfig, targetBranch: branch, force: force})
+			switch {
+			case errors.Is(err, git.ErrInvalidReference):
+				return ui.Result{Outcome: ui.Skipped, Label: "Skipped", Detail: "Branch unavailable"}
+			case err != nil:
+				return ui.Result{Outcome: ui.Failure, Label: "Failed", Detail: ui.ErrorDetail(err)}
+			default:
+				return ui.Result{Label: "Switched"}
+			}
+		}})
+	}
 
-	fmt.Println(switchedTable.Render())
+	return (ui.Batch{
+		Title: "Switch to " + branch, Activity: "Switching repositories",
+		Empty: "No repositories to switch.", Tasks: tasks,
+	}).Run(cmd.Context(), in, cmd.OutOrStdout())
 }
 
 type switchCmd struct {
@@ -124,8 +97,8 @@ func (s *switchCmd) Command() *cobra.Command {
 	var force *bool
 
 	cmd := &cobra.Command{
-		Use:   "switch",
-		Short: "Changes the branch to the given one - for all the repos that has it",
+		Use:   "switch [branch]",
+		Short: "Switch repositories to a branch",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if s.err != nil {
 				return s.err
@@ -141,12 +114,9 @@ func (s *switchCmd) Command() *cobra.Command {
 			}
 
 			if len(args) > 0 {
-				newCli(sg).run(args[0], *force)
-			} else {
-				newTui(sg).run(*force)
+				return sg.runSwitch(cmd, nil, args[0], *force, nil)
 			}
-
-			return nil
+			return sg.runPicker(cmd, *force)
 		},
 	}
 
