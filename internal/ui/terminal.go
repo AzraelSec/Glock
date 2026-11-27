@@ -77,8 +77,7 @@ func SingleLine(value string) string {
 }
 
 func ErrorDetail(err error) string {
-	var exitErr *exec.ExitError
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 		if stderr := SingleLine(string(exitErr.Stderr)); stderr != "" {
 			return SingleLine(err.Error()) + " · " + stderr
 		}

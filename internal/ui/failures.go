@@ -105,7 +105,7 @@ func (m *batchModel) updateRows() string {
 			}
 			add(prefix + marker + m.row(i, max(1, width-4), false))
 			if m.expanded[i] {
-				for _, line := range strings.Split(result.Detail, "\n") {
+				for line := range strings.SplitSeq(result.Detail, "\n") {
 					detail := WrapWords(SingleLine(line), max(1, width-4))
 					add("    " + strings.ReplaceAll(detail, "\n", "\n    "))
 				}
