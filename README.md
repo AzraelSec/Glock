@@ -100,6 +100,10 @@ implemented by `init`.
 
 For a Git source pinned to a tag, `reset` checks out that tag in detached HEAD
 and skips the pull. A local branch takes precedence if it has the same name.
+Use `glock reset --exclude backend,docs` to omit Git sources by their
+`sources` keys. Repeat `--exclude` to omit more sources. By default, a dirty
+working tree in any selected repository stops the reset. Add `--skip-dirty`
+to skip switching and pulling those repositories and continue with the clean ones.
 
 ```sh
 glock config validate

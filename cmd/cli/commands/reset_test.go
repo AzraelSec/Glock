@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"os"
@@ -129,6 +130,105 @@ func TestResetSerializesSourcesSharingCheckout(t *testing.T) {
 	runReset(t, []string{})
 	if head := runResetGit(t, repo, "rev-parse", "HEAD"); head != later {
 		t.Fatalf("expected final commit %s from source second, got %s", later, head)
+	}
+}
+
+func TestResetExcludesSourcesBeforeCheckingWorkingTrees(t *testing.T) {
+	root := t.TempDir()
+	dirty := resetCheckout(t, root, "local-dirty")
+	omitted := resetCheckout(t, root, "local-omitted")
+	clean := resetCheckout(t, root, "local-clean")
+	for _, repo := range []string{dirty, omitted, clean} {
+		runResetGit(t, repo, "switch", "-qc", "feature")
+	}
+	if err := os.WriteFile(filepath.Join(dirty, "work.txt"), []byte("in progress"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	setResetConfig(t, root, `  api: {type: github, url: 'https://example.com/org/api.git', head: main, path: local-dirty}
+  docs: {type: github, url: 'https://example.com/org/docs.git', head: main, path: local-omitted}
+  web: {type: github, url: 'https://example.com/org/web.git', head: main, path: local-clean}
+`)
+
+	for _, tc := range []struct {
+		args    []string
+		wantErr string
+	}{
+		{[]string{"--skip-pull"}, "not clean"},
+		{[]string{"--skip-pull", "--exclude", "api,typo"}, `unknown Git source "typo" in --exclude`},
+	} {
+		cmd := resetFactory(dependency.NewManager())
+		cmd.SetArgs(tc.args)
+		cmd.SetOut(io.Discard)
+		cmd.SetErr(io.Discard)
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+			t.Fatalf("reset %v: expected %q, got %v", tc.args, tc.wantErr, err)
+		}
+	}
+
+	runReset(t, []string{"--exclude", "api,docs,web"})
+	if branch := runResetGit(t, clean, "branch", "--show-current"); branch != "feature" {
+		t.Fatalf("validation or excluding every source switched web to %q", branch)
+	}
+
+	runReset(t, []string{"--skip-pull", "--exclude", "api", "--exclude", "docs"})
+	for _, repo := range []string{dirty, omitted} {
+		if branch := runResetGit(t, repo, "branch", "--show-current"); branch != "feature" {
+			t.Errorf("excluded checkout %s switched to %q", repo, branch)
+		}
+	}
+	if branch := runResetGit(t, clean, "branch", "--show-current"); branch != "main" {
+		t.Errorf("clean checkout stayed on %q", branch)
+	}
+}
+
+func TestResetSkipDirtySkipsSwitchAndPull(t *testing.T) {
+	root := t.TempDir()
+	origin := resetCheckout(t, root, "origin")
+	initial := runResetGit(t, origin, "rev-parse", "HEAD")
+	for _, name := range []string{"api", "worker", "web"} {
+		runResetGit(t, root, "clone", "-q", origin, name)
+	}
+	runResetGit(t, origin, "commit", "--allow-empty", "-qm", "upstream change")
+	upstream := runResetGit(t, origin, "rev-parse", "HEAD")
+	runResetGit(t, filepath.Join(root, "worker"), "switch", "-qc", "feature")
+	for _, name := range []string{"api", "worker"} {
+		dir := filepath.Join(root, name)
+		if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("in progress"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		runResetGit(t, dir, "add", "work.txt")
+	}
+	setResetConfig(t, root, `  api: {type: github, url: 'https://example.com/org/api.git', head: main, path: api}
+  docs: {type: github, url: 'https://example.com/org/docs.git', head: main, path: missing-docs}
+  worker: {type: github, url: 'https://example.com/org/worker.git', head: main, path: worker}
+  web: {type: github, url: 'https://example.com/org/web.git', head: main, path: web}
+`)
+
+	var out bytes.Buffer
+	cmd := resetFactory(dependency.NewManager())
+	cmd.SetArgs([]string{"--exclude", "docs", "--skip-dirty"})
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+
+	if head := runResetGit(t, filepath.Join(root, "api"), "rev-parse", "HEAD"); head != initial {
+		t.Errorf("dirty checkout on main pulled to %s", head)
+	}
+	if branch := runResetGit(t, filepath.Join(root, "worker"), "branch", "--show-current"); branch != "feature" {
+		t.Errorf("dirty checkout switched to %q", branch)
+	}
+	if head := runResetGit(t, filepath.Join(root, "web"), "rev-parse", "HEAD"); head != upstream {
+		t.Errorf("clean checkout did not pull; HEAD is %s", head)
+	}
+	for _, name := range []string{"api", "worker"} {
+		if !strings.Contains(out.String(), "["+name+"] Skipped") {
+			t.Errorf("missing skip reason for %s in %q", name, out.String())
+		}
+		if state := runResetGit(t, filepath.Join(root, name), "status", "--porcelain"); state != "A  work.txt" {
+			t.Errorf("staged change for %s was altered: %q", name, state)
+		}
 	}
 }
 
