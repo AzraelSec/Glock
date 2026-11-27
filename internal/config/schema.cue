@@ -24,7 +24,7 @@ package config
 	type: "github"
 	path: #RemoteDir & !~"^(\\./)*\\.?$"
 	url:  string & != "" // git URL
-	head: string & != "" // required: default branch
+	head: string & != "" // required: default branch or tag
 }
 
 #SourceHTTP: {

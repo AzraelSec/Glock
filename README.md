@@ -88,6 +88,8 @@ absolute or relative to the project root. Components and their hooks run there.
 `status`, `switch`, `reset`, `init`, `update`, and `tag` operate once per Git
 source, ignoring non-Git sources. Acquisition for other source types is not
 implemented by `init`.
+For a Git source pinned to a tag, `reset` checks out that tag in detached HEAD
+and skips the pull. A local branch takes precedence if it has the same name.
 
 ```sh
 glock config validate

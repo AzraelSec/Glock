@@ -25,6 +25,7 @@ type Git interface {
 	HasChanges(repo Repo) (bool, error)
 	DiffersFromRemote(repo Repo) (bool, error)
 	Switch(repo Repo, branch BranchName, force bool) error
+	SwitchToConfiguredRef(repo Repo) (bool, error)
 	Pull(repo Repo, rebase bool) error
 	PullBranch(repo Repo, branch BranchName, rebase bool) error
 	ListBranches(repo Repo) ([]BranchName, error)

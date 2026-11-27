@@ -46,6 +46,10 @@ func (m *mockGit) Switch(repo git.Repo, branch git.BranchName, force bool) error
 	return nil
 }
 
+func (m *mockGit) SwitchToConfiguredRef(repo git.Repo) (bool, error) {
+	return false, nil
+}
+
 func (m *mockGit) Pull(repo git.Repo, rebase bool) error {
 	m.pulls = append(m.pulls, repo)
 	m.rebase = append(m.rebase, rebase)

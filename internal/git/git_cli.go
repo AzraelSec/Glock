@@ -149,6 +149,44 @@ func (gc GitCLI) Switch(repo Repo, br BranchName, force bool) error {
 	return err
 }
 
+func (gc GitCLI) SwitchToConfiguredRef(repo Repo) (bool, error) {
+	branch, err := gc.CurrentBranch(repo)
+	if err != nil {
+		return false, err
+	}
+	if branch == repo.Refs && branch != "HEAD" {
+		return false, nil
+	}
+
+	tagRef := "refs/tags/" + string(repo.Refs)
+	hasTag, err := gc.hasRef(repo, tagRef)
+	if err != nil {
+		return false, err
+	}
+	if hasTag {
+		// A local branch takes precedence, matching git switch and git clone --branch.
+		hasBranch, err := gc.hasRef(repo, "refs/heads/"+string(repo.Refs))
+		if err != nil {
+			return false, err
+		}
+		if !hasBranch {
+			err := gc.builder().SetRepo(repo).Arg("switch", "--detach", "--", tagRef).Run()
+			return err == nil, err
+		}
+	}
+
+	return false, gc.Switch(repo, repo.Refs, false)
+}
+
+func (gc GitCLI) hasRef(repo Repo, ref string) (bool, error) {
+	err := gc.builder().SetRepo(repo).Arg("show-ref", "--verify", "--quiet", "--", ref).Run()
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return false, nil
+	}
+	return err == nil, err
+}
+
 func (gc GitCLI) Pull(repo Repo, rebase bool) error {
 	if !dir.DirExists(repo.Path) {
 		return errors.New("unable to locate repo")
