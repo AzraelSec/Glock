@@ -1,10 +1,10 @@
-# Example glock.yml (v2 schema).
+# Example glock.yml for the current unversioned schema.
 #
 # This file is validated by TestParseConfigV2_ValidExample in
-# internal/config/config_v2_test.go — keep them in sync.
+# internal/config/config_v2_test.go.
 
-# Optional settings used by the existing Git commands.
-tag_pattern: 'v{.Now.Format("20060102.150405")}'
+# Optional Go template rendered for each repository by glock tag.
+tag_pattern: 'v{{ .Now.Format "20060102.150405" }}'
 
 # Every source requires a local directory. Remote paths are relative to this
 # file's folder. Filesystem paths use an existing directory directly and may
@@ -14,29 +14,29 @@ sources:
     type: github                # git clone
     path: backend
     url: git@github.com:AzraelSec/backend.git
-    head: main                  # default branch (required for github)
-    updater: go                 # optional; otherwise infer from lockfiles
-    exclude_tag: false          # optional; skip this source when tagging
+    head: main                  # configured branch or tag, required for github
+    updater: "go mod"           # optional, inferred from lockfiles when omitted
+    exclude_tag: false          # set true to skip this source when tagging
   frontend:
     type: github
     path: frontend
     url: git@github.com:AzraelSec/frontend.git
     head: master
   assets:
-    type: http                  # plain download, no branch concept
+    type: http                  # accepted by the schema, acquisition is manual
     path: public
-    url: http://azralesec.sh/something.png
+    url: https://example.com/assets.tar.gz
   tools:
     type: filesystem            # an existing local directory
     path: /opt/acme/tools
 
-# Components are the services you run. A component without `source` is a
-# host executable and runs in this file's folder.
+# Components run commands from the source directory. Sourceless components
+# use the project root.
 components:
   api:
     source: backend
-    # .env files loaded (in order; later files win) from the component's
-    # execution dir before the process starts.
+    # Load dotenv files from the execution directory. Later files override
+    # earlier files, and host environment values take precedence.
     env_filenames:
       - .env
       - .env.local
@@ -48,14 +48,14 @@ components:
     source: frontend
     run: "pnpm run dev"
     on:
-      startup:                  # run before the component starts
-        - build-assets
-      shutdown:                 # run after the component stops
-        - clean-assets
+      steps:
+        - startup: build-assets
+          cleanup: clean-assets # registered after startup succeeds
   local-proxy:                  # sourceless: runs from the project folder
     run: "caddy reverse-proxy --from :8080 --to :3000"
 
-# Workspaces are named groups of components for focused start/stop.
+# Workspaces group component keys for runtime operations. The CLI's
+# glock start --repos filter takes Git source keys such as backend.
 workspaces:
   backend-focused:
     - api
@@ -63,7 +63,8 @@ workspaces:
   only-frontend:
     - SPA
 
-# Project-level lifecycle hooks, referencing tasks by key.
+# Project-level hooks use separate startup and shutdown lists. Each hook
+# references a task by key. Use either lists or steps in each on block.
 on:
   startup:
     - docker-compose-up
